@@ -1,0 +1,25 @@
+{
+  "name": "scoop-ready-ice-cream-shop",
+  "version": "1.0.0",
+  "description": "Mobile-first Three.js ice cream shop game for web playables.",
+  "private": true,
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "build:vercel": "vite build --base=/",
+    "preview": "vite preview --host 0.0.0.0",
+    "check": "vite build"
+  },
+  "keywords": ["threejs", "html5-game", "youtube-playables"],
+  "license": "UNLICENSED",
+  "type": "module",
+  "dependencies": {
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "vite": "^8.1.4"
+  }
+}

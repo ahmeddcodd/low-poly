@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+    <meta name="theme-color" content="#8bd653" />
+    <meta name="color-scheme" content="light only" />
+    <link rel="icon" href="data:," />
+    <title>Scoop Ready — Ice Cream Shop</title>
+  </head>
+  <body>
+    <main id="app" aria-label="Scoop Ready ice cream shop game">
+      <canvas id="game-canvas" aria-label="Interactive isometric ice cream shop"></canvas>
+
+      <section id="hud" class="hud" aria-live="polite">
+        <button id="reset-view" class="icon-button hud-interactive" type="button" aria-label="Reset ice cream shop view" title="Reset view">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4.7 10.4 12 4l7.3 6.4v8.1a1.5 1.5 0 0 1-1.5 1.5h-3.6v-5.3H9.8V20H6.2a1.5 1.5 0 0 1-1.5-1.5Z" />
+          </svg>
+        </button>
+
+        <div class="build-status" aria-label="Ice cream shop status">
+          <span class="build-status__label">ICE CREAM</span>
+          <span class="build-status__value">OPEN</span>
+        </div>
+
+        <div class="cash-chip" aria-label="Cash: 0">
+          <span class="cash-stack" aria-hidden="true"><i></i><i></i><i></i></span>
+          <strong>0</strong>
+        </div>
+
+        <div id="objective" class="objective">
+          <strong>Customer approaching</strong>
+          <span>Get ready to make the first ice cream order</span>
+        </div>
+
+        <button id="toggle-guides" class="guide-button hud-interactive" type="button" aria-pressed="false">
+          <span class="guide-button__dot" aria-hidden="true"></span>
+          Build slots
+        </button>
+
+        <div id="movement-stick" class="movement-stick" aria-hidden="true">
+          <span></span>
+        </div>
+
+        <div class="controls-hint" aria-hidden="true">
+          <span>Drag to move worker</span>
+          <i></i>
+          <span>WASD / arrows &bull; Pinch to zoom</span>
+        </div>
+      </section>
+
+      <section id="loading" class="loading" aria-label="Loading ice cream shop">
+        <div class="loading__mark" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <h1>SCOOP READY</h1>
+        <p>Preparing the ice cream shop</p>
+        <div class="loading__track"><i id="loading-fill"></i></div>
+        <span id="loading-value">0%</span>
+      </section>
+
+      <div id="error-panel" class="error-panel" role="alert" hidden>
+        <strong>Couldn’t open the ice cream shop</strong>
+        <span>Reload the page and try again.</span>
+      </div>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
