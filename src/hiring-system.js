@@ -53,8 +53,9 @@ function targetRotation(deltaX, deltaZ) {
 const HIRE_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: 'gym-manager',
-    roomLabel: 'GENERAL OFFICE',
-    title: 'General manager',
+    roomLabel: 'HR OFFICE',
+    hireLabel: 'HIRE HR',
+    title: 'HR manager',
     cost: 60,
     padPosition: Object.freeze([13.7, 0.04, -3]),
     chairPosition: Object.freeze([15.3, 0.02, -3]),
@@ -63,8 +64,9 @@ const HIRE_DEFINITIONS = Object.freeze([
   }),
   Object.freeze({
     id: 'wc-manager',
-    roomLabel: 'WC OFFICE',
-    title: 'WC manager',
+    roomLabel: 'GENERAL OFFICE',
+    hireLabel: 'HIRE GENERAL MANAGER',
+    title: 'General manager',
     cost: 80,
     padPosition: Object.freeze([13.7, 0.04, 3]),
     chairPosition: Object.freeze([15.3, 0.02, 3]),
@@ -116,8 +118,10 @@ function createPadLabel(definition) {
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     context.fillStyle = hired ? '#a9ff83' : '#ffffff';
-    context.font = '900 49px Arial, sans-serif';
-    context.fillText(hired ? 'HIRED' : 'HIRE MANAGER', 256, 105);
+    const heading = hired ? 'HIRED' : definition.hireLabel;
+    const headingSize = heading.length > 12 ? 34 : 49;
+    context.font = `900 ${headingSize}px Arial, sans-serif`;
+    context.fillText(heading, 256, 105);
     if (!hired) drawCashNote(context, 78, 184, 150, 82);
     context.fillStyle = '#ffffff';
     context.font = '900 88px Arial, sans-serif';

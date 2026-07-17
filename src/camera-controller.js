@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { WORLD_CONFIG } from './config.js';
 
 const MIN_ZOOM = 0.58;
+const DEFAULT_ZOOM = 0.72;
 const MAX_ZOOM = 1.72;
 
 export class IsometricCameraController {
@@ -11,8 +12,8 @@ export class IsometricCameraController {
     this.target = new THREE.Vector3(...WORLD_CONFIG.center);
     this.goalTarget = this.target.clone();
     this.defaultTarget = this.target.clone();
-    this.zoom = 1;
-    this.goalZoom = 1;
+    this.zoom = DEFAULT_ZOOM;
+    this.goalZoom = DEFAULT_ZOOM;
     this.aspect = 1;
     this.viewHeight = 30;
     this.baseViewHeight = 30;
@@ -102,7 +103,7 @@ export class IsometricCameraController {
   reset(position) {
     if (position) this.follow(position);
     else this.goalTarget.copy(this.defaultTarget);
-    this.goalZoom = 1;
+    this.goalZoom = DEFAULT_ZOOM;
   }
 
   update(delta) {
