@@ -274,6 +274,17 @@ function animate(timestamp) {
     canvas.dataset.workerSpeedLevel = String(hiringSystem?.workerSpeedLevel ?? 0);
     canvas.dataset.playerSpeedMultiplier = String(hiringSystem?.playerSpeedMultiplier ?? 1);
     canvas.dataset.profitMultiplier = String(hiringSystem?.profitMultiplier ?? 1);
+    canvas.dataset.workerJobs = hiringSystem?.workers
+      .map(({ index, role, state, taskTableId, currentAnimation, model }) => (
+        `${index + 1}:${role}:${state}:${currentAnimation ?? 'none'}@${model.position.x.toFixed(2)},${model.position.z.toFixed(2)}`
+        + (taskTableId ? `#${taskTableId}` : '')
+      ))
+      .join('|') ?? '';
+    canvas.dataset.workerAutomationCount = String(hiringSystem?.workerAutomation?.workerCount ?? 0);
+    canvas.dataset.assignedServer = String(hiringSystem?.workerAutomation?.assignedServerIndex ?? '');
+    canvas.dataset.simulationTime = elapsed.toFixed(2);
+    canvas.dataset.trashLid = restaurantScene.iceCreamProduction.tableCleanup?.lidState ?? 'closed';
+    canvas.dataset.trashDisposal = restaurantScene.iceCreamProduction.tableCleanup?.disposal?.owner ?? '';
     canvas.dataset.customerStates = characterSystem.customers
       .map(({ definition, state, seatId }) => (
         `${definition.id}:${state}${seatId ? `@${seatId}` : ''}`

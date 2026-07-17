@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { WORLD_CONFIG } from './config.js';
 
+import { WorkerAutomationSystem } from './worker-automation-system.js';
 const GLASSES_CHARACTER_ID = 'elderly-male';
 const PAYMENT_RATE = 34;
 const PAYMENT_RADIUS = 0.9;
@@ -392,8 +393,11 @@ export class HiringSystem {
       });
     }
 
-    this.workers = WORKER_ROUTES.map((route, index) => createAutomatedWorker(playerCharacter, route, index));
-    this.workers.forEach(({ model }) => this.group.add(model));
+    this.workerAutomation = new WorkerAutomationSystem(playerCharacter, characterSystem, productionSystem);
+    this.workerAutomation.setWorkerCount(this.workerCount);
+    this.workerAutomation.setSpeedLevel(this.workerSpeedLevel);
+    this.workers = this.workerAutomation.workers;
+    this.group.add(this.workerAutomation.group);
     this.colliders = Object.freeze(HIRE_DEFINITIONS.map(chairCollider));
 
     for (let index = 0; index < MAX_CASH_FLIGHTS; index += 1) {
@@ -470,10 +474,9 @@ export class HiringSystem {
     this.productionSystem.spendCash(cost);
     setUpgradeLevel(this.upgrades, id, level + 1);
     if (id === 'workers') {
-      this.workers[level].model.visible = true;
+      this.workerAutomation.setWorkerCount(this.workerCount);
     } else if (id === 'worker-speed') {
-      const timeScale = 1 + (level + 1) * 0.18;
-      this.workers.forEach(({ walkAction }) => { if (walkAction) walkAction.timeScale = timeScale; });
+      this.workerAutomation.setSpeedLevel(this.workerSpeedLevel);
     } else if (id === 'wc-boost') {
       this.characterSystem.setPlayerSpeedMultiplier(this.playerSpeedMultiplier);
     }
@@ -484,28 +487,8 @@ export class HiringSystem {
     return Object.freeze({ ok: true, id, level: level + 1 });
   }
 
-  _updateWorkers(delta) {
-    const speed = BASE_WORKER_SPEED * (1 + this.workerSpeedLevel * 0.22);
-    this.workers.forEach((worker, index) => {
-      if (index >= this.workerCount) return;
-      worker.mixer.update(delta);
-      const target = worker.route[worker.routeIndex];
-      const deltaX = target[0] - worker.model.position.x;
-      const deltaZ = target[1] - worker.model.position.z;
-      const distance = Math.hypot(deltaX, deltaZ);
-      const step = speed * delta;
-      if (distance <= step + 0.02) {
-        worker.model.position.x = target[0];
-        worker.model.position.z = target[1];
-        worker.routeIndex = (worker.routeIndex + 1) % worker.route.length;
-        return;
-      }
-      const directionX = deltaX / Math.max(distance, 0.001);
-      const directionZ = deltaZ / Math.max(distance, 0.001);
-      worker.model.position.x += directionX * step;
-      worker.model.position.z += directionZ * step;
-      worker.model.rotation.y = targetRotation(directionX, directionZ);
-    });
+  _updateWorkers(delta, elapsed) {
+    this.workerAutomation.update(delta, elapsed);
   }
 
   _spawnCashFlight(playerPosition, pad, elapsed) {
@@ -596,7 +579,7 @@ export class HiringSystem {
   update(delta, elapsed, playerPosition) {
     this.lastElapsed = elapsed;
     this._updateCashFlights(elapsed);
-    this._updateWorkers(delta);
+    this._updateWorkers(delta, elapsed);
     this.pads.forEach((pad) => {
       this._updateHireReveal(pad, elapsed);
     });
@@ -661,12 +644,7 @@ export class HiringSystem {
         if (object.isSkinnedMesh) object.skeleton.dispose();
       });
     });
-    this.workers.forEach(({ mixer, model }) => {
-      mixer.stopAllAction();
-      model.traverse((object) => {
-        if (object.isSkinnedMesh) object.skeleton.dispose();
-      });
-    });
+    this.workerAutomation.dispose();
     this.group.removeFromParent();
     disposeProcedural(this.group);
   }

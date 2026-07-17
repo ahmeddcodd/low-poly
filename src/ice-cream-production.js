@@ -656,6 +656,11 @@ export class IceCreamProductionSystem {
       return true;
     }
 
+    if (event.type === 'disposing') {
+      this._setStatus('Throwing away the garbage', 'The trash lid is open while the waste drops inside');
+      return true;
+    }
+
     if (event.type === 'disposed') {
       this._setTargetMarker(this.suspendedTargetMarkerId);
       this.suspendedTargetMarkerId = null;
@@ -750,6 +755,59 @@ export class IceCreamProductionSystem {
     playMachineAction(machine, '_Machine_Dispense');
     playMachineAction(machine, '_Product_Pop');
     playMachineAction(machine, '_Tray_Load');
+  }
+
+  performWorkerStage(worker, elapsed) {
+    if (!worker || !this.activeOrder) return false;
+    const order = this.activeOrder;
+    const productionSpeed = this.hiringSystem?.productionSpeedMultiplier ?? 1;
+
+    if (this.stage === 'need-container') {
+      this.stage = 'need-machine';
+      this._setTargetMarker(`machine-${order.flavor}`);
+      this._setStatus(
+        `${worker.label} worker picked up the ${order.container}`,
+        `They are taking it to the ${order.flavor} machine`,
+      );
+      return true;
+    }
+
+    if (this.stage === 'need-machine') {
+      const machine = this.machines.find(({ flavor }) => flavor === order.flavor);
+      if (!machine) return false;
+      this._triggerMachine(machine, elapsed);
+      this.stage = 'dispensing';
+      this.dispenseReadyAt = elapsed + 0.74 / productionSpeed;
+      this._setTargetMarker(null);
+      this._setStatus(
+        `${worker.label} worker is dispensing ${order.flavor}`,
+        'The machine is filling the employee service tray',
+      );
+      return true;
+    }
+
+    if (this.stage === 'need-finish') {
+      this.stage = 'need-serve';
+      this._setTargetMarker('serve');
+      this._setStatus(
+        `${worker.label} worker added the finishing touch`,
+        'They are carrying the completed ice cream to the customer',
+      );
+      return true;
+    }
+
+    if (this.stage === 'need-serve') {
+      this.stage = 'serving';
+      this.serveReadyAt = elapsed + 0.62 / productionSpeed;
+      this._setTargetMarker(null);
+      this._setStatus(
+        `${worker.label} worker served the order!`,
+        'The customer will pay and walk to a clean dining seat',
+      );
+      return true;
+    }
+
+    return false;
   }
 
   _near(playerPosition, point) {

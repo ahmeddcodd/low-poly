@@ -7,6 +7,9 @@ const TABLE_INTERACTION_RADIUS = 1.2;
 const BIN_INTERACTION_RADIUS = 1.2;
 const TRASH_BIN_HALF_WIDTH = 0.75;
 const TRASH_BIN_HALF_DEPTH = 0.45;
+const DISPOSAL_DURATION = 1.16;
+const LID_CLOSED_ANGLE = -0.08;
+const LID_OPEN_ANGLE = 1.18;
 
 export const TRASH_BIN_COLLIDER = Object.freeze({
   name: 'Procedural_Trash_Bin_Collider',
@@ -21,6 +24,11 @@ function squaredDistanceXZ(position, point) {
   const deltaX = position.x - point[0];
   const deltaZ = position.z - point[1];
   return deltaX * deltaX + deltaZ * deltaZ;
+}
+
+function easeInOut(value) {
+  const t = THREE.MathUtils.clamp(value, 0, 1);
+  return t * t * (3 - 2 * t);
 }
 
 function createInteractionMarker(point, color) {
@@ -145,11 +153,15 @@ function createTrashBin() {
   body.position.y = 0.55;
   const lowerTrim = new THREE.Mesh(new THREE.BoxGeometry(1.48, 0.15, 0.9), trimMaterial);
   lowerTrim.position.y = 0.1;
+  const lidPivot = new THREE.Group();
+  lidPivot.name = 'Trash_Bin_Animated_Lid_Pivot';
+  lidPivot.position.set(0, 1.12, 0.42);
+  lidPivot.rotation.x = LID_CLOSED_ANGLE;
   const lid = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.16, 0.9), trimMaterial);
-  lid.position.set(0, 1.16, 0.05);
-  lid.rotation.x = -0.12;
-  const opening = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.1, 0.27), openingMaterial);
-  opening.position.set(0, 1.1, -0.42);
+  lid.position.set(0, 0.04, -0.38);
+  lidPivot.add(lid);
+  const opening = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.1, 0.3), openingMaterial);
+  opening.position.set(0, 1.1, -0.34);
   const label = new THREE.Mesh(new THREE.PlaneGeometry(1.02, 0.34), createTrashLabelMaterial());
   label.name = 'Trash_Bin_Label';
   label.position.set(0, 0.7, -0.406);
@@ -159,8 +171,8 @@ function createTrashBin() {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
   });
-  group.add(body, lowerTrim, lid, opening, label);
-  return group;
+  group.add(body, lowerTrim, lidPivot, opening, label);
+  return { group, lidPivot };
 }
 
 function disposeResources(roots) {
@@ -189,8 +201,12 @@ export class TableCleanupSystem {
     this.group.name = 'Table_Cleanup_Assets';
     this.garbageKit = createGarbageKit();
     this.tableVisuals = new Map();
+    this.workerCarryRigs = new Map();
     this.carryingTableId = null;
     this.carryingEvent = { type: 'carrying', tableId: null };
+    this.disposal = null;
+    this.playerDisposalComplete = null;
+    this.lidState = 'closed';
 
     characterSystem.diningTables.forEach((table) => {
       const cluster = createGarbageCluster(this.garbageKit, `Table_Garbage_${table.id}`);
@@ -201,16 +217,25 @@ export class TableCleanupSystem {
       this.tableVisuals.set(table.id, { ...cluster, marker });
     });
 
-    this.trashBin = createTrashBin();
+    const trashBin = createTrashBin();
+    this.trashBin = trashBin.group;
+    this.lidPivot = trashBin.lidPivot;
     this.binMarker = createInteractionMarker(TRASH_BIN_INTERACTION_POINT, 0x67f05c);
-    this.group.add(this.trashBin, this.binMarker);
+    const dropCluster = createGarbageCluster(this.garbageKit, 'Animated_Trash_Drop');
+    this.dropRig = dropCluster.group;
+    this.dropRig.visible = false;
+    this.group.add(this.trashBin, this.binMarker, this.dropRig);
 
-    const carryCluster = createGarbageCluster(this.garbageKit, 'Worker_Carried_Garbage');
+    const carryCluster = createGarbageCluster(this.garbageKit, 'Player_Carried_Garbage');
     this.carryRig = carryCluster.group;
     this.carryRig.position.set(0, 1.18, 0.48);
     this.carryRig.scale.setScalar(0.78);
     this.carryRig.visible = false;
     characterSystem.player.model.add(this.carryRig);
+
+    this.scratchStart = new THREE.Vector3();
+    this.scratchTarget = new THREE.Vector3();
+    this.scratchPosition = new THREE.Vector3();
     this._syncVisuals();
   }
 
@@ -218,8 +243,113 @@ export class TableCleanupSystem {
     return [TRASH_BIN_COLLIDER];
   }
 
+  get binInteractionPoint() {
+    return TRASH_BIN_INTERACTION_POINT;
+  }
+
   get isCarrying() {
     return this.carryingTableId !== null;
+  }
+
+  _getWorkerCarryRig(workerModel) {
+    let rig = this.workerCarryRigs.get(workerModel);
+    if (rig) return rig;
+    rig = createGarbageCluster(this.garbageKit, `${workerModel.name}_Carried_Garbage`).group;
+    rig.position.set(0, 1.18, 0.48);
+    rig.scale.setScalar(0.78);
+    rig.visible = false;
+    workerModel.add(rig);
+    this.workerCarryRigs.set(workerModel, rig);
+    return rig;
+  }
+
+  beginWorkerCleanup(workerModel, tableId) {
+    if (!workerModel || !this.characterSystem.beginTableCleanup(tableId)) return false;
+    const rig = this._getWorkerCarryRig(workerModel);
+    rig.visible = true;
+    this._syncVisuals();
+    return true;
+  }
+
+  _startDisposal(owner, actorModel, tableId, carryRig, elapsed) {
+    if (this.disposal || !actorModel || !tableId || !carryRig) return false;
+    const table = this.characterSystem.getDiningTable(tableId);
+    if (table?.state !== 'garbage-carried') return false;
+
+    actorModel.updateMatrixWorld(true);
+    actorModel.getWorldPosition(this.scratchStart);
+    this.scratchStart.y += 1.12;
+    this.scratchStart.z += 0.16;
+    carryRig.visible = false;
+    this.dropRig.position.copy(this.scratchStart);
+    this.dropRig.rotation.set(0, actorModel.rotation.y, 0);
+    this.dropRig.scale.setScalar(0.8);
+    this.dropRig.visible = true;
+    this.disposal = {
+      owner,
+      actorModel,
+      tableId,
+      carryRig,
+      startedAt: elapsed,
+      start: this.scratchStart.clone(),
+    };
+    this.lidState = 'opening';
+    if (owner === 'player') this.characterSystem.setPlayerCarrying(false);
+    this._syncVisuals();
+    return true;
+  }
+
+  startWorkerDisposal(workerModel, tableId, elapsed) {
+    return this._startDisposal('worker', workerModel, tableId, this._getWorkerCarryRig(workerModel), elapsed);
+  }
+
+  _updateDisposal(elapsed) {
+    if (!this.disposal) return null;
+    const progress = THREE.MathUtils.clamp(
+      (elapsed - this.disposal.startedAt) / DISPOSAL_DURATION,
+      0,
+      1,
+    );
+
+    const openProgress = easeInOut(progress / 0.28);
+    const closeProgress = easeInOut((progress - 0.72) / 0.28);
+    const lidBlend = openProgress * (1 - closeProgress);
+    this.lidPivot.rotation.x = THREE.MathUtils.lerp(LID_CLOSED_ANGLE, LID_OPEN_ANGLE, lidBlend);
+    this.lidState = progress < 0.28 ? 'opening' : progress < 0.72 ? 'open' : progress < 1 ? 'closing' : 'closed';
+
+    const dropProgress = easeInOut((progress - 0.18) / 0.58);
+    this.scratchTarget.set(TRASH_BIN_POSITION[0], 0.94, TRASH_BIN_POSITION[2] - 0.28);
+    this.scratchPosition.lerpVectors(this.disposal.start, this.scratchTarget, dropProgress);
+    this.scratchPosition.y += Math.sin(dropProgress * Math.PI) * 0.42;
+    this.dropRig.position.copy(this.scratchPosition);
+    this.dropRig.rotation.y += 0.055;
+    this.dropRig.rotation.z = dropProgress * 0.42;
+    this.dropRig.scale.setScalar(THREE.MathUtils.lerp(0.8, 0.16, dropProgress));
+    this.dropRig.visible = progress < 0.83;
+
+    if (progress < 1) {
+      return this.disposal.owner === 'player'
+        ? { type: 'disposing', tableId: this.disposal.tableId }
+        : null;
+    }
+
+    const completed = this.disposal;
+    this.characterSystem.completeTableCleanup(completed.tableId);
+    completed.carryRig.visible = false;
+    this.disposal = null;
+    this.dropRig.visible = false;
+    this.dropRig.scale.setScalar(1);
+    this.lidPivot.rotation.x = LID_CLOSED_ANGLE;
+    this.lidState = 'closed';
+    if (completed.owner === 'player') {
+      this.carryingTableId = null;
+      this.carryingEvent.tableId = null;
+      this.playerDisposalComplete = completed.tableId;
+    }
+    this._syncVisuals();
+    return completed.owner === 'player'
+      ? { type: 'disposed', tableId: completed.tableId }
+      : null;
   }
 
   _syncVisuals() {
@@ -233,7 +363,7 @@ export class TableCleanupSystem {
       });
       visual.marker.visible = !this.isCarrying && this.characterSystem.canCleanTable(table.id);
     });
-    this.binMarker.visible = this.isCarrying;
+    this.binMarker.visible = this.isCarrying && this.disposal?.owner !== 'player';
   }
 
   _pulseMarkers(elapsed) {
@@ -245,21 +375,18 @@ export class TableCleanupSystem {
   }
 
   update(elapsed, playerPosition, canPickUp) {
+    const disposalEvent = this._updateDisposal(elapsed);
     this._syncVisuals();
     this._pulseMarkers(elapsed);
+    if (disposalEvent) return disposalEvent;
 
     if (this.isCarrying) {
       if (squaredDistanceXZ(playerPosition, TRASH_BIN_INTERACTION_POINT)
         <= BIN_INTERACTION_RADIUS * BIN_INTERACTION_RADIUS) {
-        const tableId = this.carryingTableId;
-        this.characterSystem.completeTableCleanup(tableId);
-        this.carryingTableId = null;
-        this.carryingEvent.tableId = null;
-        this.carryRig.visible = false;
-        this.characterSystem.setPlayerCarrying(false);
-        this.characterSystem.playPlayerAction('Pickup', 0.48);
-        this._syncVisuals();
-        return { type: 'disposed', tableId };
+        if (this._startDisposal('player', this.characterSystem.player.model, this.carryingTableId, this.carryRig, elapsed)) {
+          this.characterSystem.playPlayerAction('Serve', 0.74);
+          return { type: 'disposing', tableId: this.carryingTableId };
+        }
       }
       return this.carryingEvent;
     }
@@ -284,8 +411,11 @@ export class TableCleanupSystem {
   }
 
   dispose() {
+    const workerRigs = [...this.workerCarryRigs.values()];
+    disposeResources([this.group, this.carryRig, ...workerRigs]);
     this.carryRig.removeFromParent();
+    workerRigs.forEach((rig) => rig.removeFromParent());
+    this.workerCarryRigs.clear();
     this.group.removeFromParent();
-    disposeResources([this.group, this.carryRig]);
   }
 }
