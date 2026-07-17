@@ -15,6 +15,9 @@ const objective = document.querySelector('#objective');
 const movementStick = document.querySelector('#movement-stick');
 const cashChip = document.querySelector('.cash-chip');
 const cashValue = cashChip.querySelector('strong');
+const managerUpgrades = document.querySelector('#manager-upgrades');
+const managerUpgradeCards = [...managerUpgrades.querySelectorAll('[data-upgrade]')];
+const managerUpgradeRoomLabel = managerUpgrades.querySelector('.manager-upgrades__header > span');
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -44,6 +47,9 @@ let running = true;
 let tapStart = null;
 let displayedStatusRevision = -1;
 let displayedCash = -1;
+let displayedUpgradeRevision = -1;
+let displayedUpgradeCash = -1;
+let displayedUpgradeRoomId = null;
 const debugTelemetryEnabled = location.hostname === '127.0.0.1' && new URLSearchParams(location.search).has('debug');
 
 function addLights() {
@@ -109,6 +115,50 @@ function selectPlacementAt(clientX, clientY) {
   requestAnimationFrame(() => objective.classList.add('is-selected'));
 }
 
+function syncManagerUpgrades() {
+  const hiringSystem = restaurantScene?.iceCreamProduction.hiringSystem;
+  if (!hiringSystem) return;
+  const roomId = hiringSystem.upgradeRoomId;
+  if (roomId !== displayedUpgradeRoomId) {
+    displayedUpgradeRoomId = roomId;
+    managerUpgrades.hidden = !roomId;
+    displayedUpgradeRevision = -1;
+  }
+  if (!roomId) return;
+  if (hiringSystem.upgradeRevision === displayedUpgradeRevision
+    && hiringSystem.productionSystem.cash === displayedUpgradeCash) return;
+
+  displayedUpgradeRevision = hiringSystem.upgradeRevision;
+  displayedUpgradeCash = hiringSystem.productionSystem.cash;
+  managerUpgradeRoomLabel.textContent = roomId === 'wc-manager'
+    ? 'WC MANAGER OFFICE'
+    : 'GENERAL MANAGER OFFICE';
+
+  const cards = hiringSystem.getUpgradeCards();
+  managerUpgradeCards.forEach((button) => {
+    const card = cards.find(({ id }) => id === button.dataset.upgrade);
+    if (!card) return;
+    const price = button.querySelector('.manager-card__price');
+    const levelDisplay = button.querySelector('.manager-card__levels');
+    const pips = [...levelDisplay.querySelectorAll('i')];
+    const affordable = hiringSystem.productionSystem.cash >= card.cost;
+    button.classList.toggle('is-locked', !card.managerHired);
+    button.classList.toggle('is-maxed', card.maxed);
+    button.classList.toggle('is-unaffordable', card.managerHired && !card.maxed && !affordable);
+    button.disabled = card.maxed;
+    button.setAttribute('aria-label', card.maxed
+      ? `${card.title}, maximum level`
+      : `${card.title}, level ${card.level} of ${card.maxLevel}, costs ${card.cost}`);
+    levelDisplay.setAttribute('aria-label', card.maxed
+      ? 'Maximum level reached'
+      : `Level ${card.level} of ${card.maxLevel}`);
+    pips.forEach((pip, index) => pip.classList.toggle('is-active', index < card.level));
+    price.textContent = card.maxed
+      ? 'MAX'
+      : card.managerHired ? `$${card.cost}` : `HIRE ${card.managerId === 'wc-manager' ? 'WC' : 'GM'}`;
+  });
+}
+
 function syncGameHud() {
   const production = restaurantScene?.iceCreamProduction;
   if (!production) return;
@@ -158,6 +208,14 @@ function bindInterface() {
   });
   canvas.addEventListener('pointercancel', () => { tapStart = null; });
 
+  managerUpgradeCards.forEach((button) => {
+    button.addEventListener('click', () => {
+      restaurantScene?.iceCreamProduction.hiringSystem?.purchaseUpgrade(button.dataset.upgrade);
+      displayedUpgradeRevision = -1;
+      syncManagerUpgrades();
+    });
+  });
+
   document.addEventListener('visibilitychange', () => {
     running = !document.hidden;
   });
@@ -175,6 +233,7 @@ function animate(timestamp) {
   }
   restaurantScene?.update(delta, elapsed);
   syncGameHud();
+  syncManagerUpgrades();
   if (debugTelemetryEnabled && characterSystem) {
     const teleportX = Number(canvas.dataset.teleportX);
     const teleportZ = Number(canvas.dataset.teleportZ);
@@ -188,6 +247,38 @@ function animate(timestamp) {
     canvas.dataset.playerZ = characterSystem.player.model.position.z.toFixed(3);
     canvas.dataset.productionStage = restaurantScene.iceCreamProduction.stage;
     canvas.dataset.carriedProduct = restaurantScene.iceCreamProduction.activeCarryProduct ?? '';
+    canvas.dataset.collectedCash = String(restaurantScene.iceCreamProduction.cash);
+    canvas.dataset.pendingCash = String(restaurantScene.iceCreamProduction.pendingCash);
+    canvas.dataset.availableSeats = String(characterSystem.availableSeatCount);
+    canvas.dataset.dirtyTables = String(characterSystem.dirtyTableCount);
+    canvas.dataset.cleanableTables = String(characterSystem.cleanableTableCount);
+    canvas.dataset.garbageCarry = restaurantScene.iceCreamProduction.tableCleanup?.carryingTableId ?? '';
+    canvas.dataset.hiredEmployees = String(
+      restaurantScene.iceCreamProduction.hiringSystem?.hiredCount ?? 0,
+    );
+    canvas.dataset.hiringPads = restaurantScene.iceCreamProduction.hiringSystem?.pads
+      .map(({ definition, paid, hired }) => (
+        `${definition.id}:${paid}/${definition.cost}${hired ? ':hired' : ''}`
+      )).join('|') ?? '';
+    canvas.dataset.employeeStates = restaurantScene.iceCreamProduction.hiringSystem?.pads
+      .map(({ definition, hired, employee }) => (
+        `${definition.id}:${hired ? 'seated' : 'locked'}:${employee.action?.paused ? 'idle' : 'moving'}:${(employee.action?.time ?? 0).toFixed(3)}`
+      ))
+      .join('|') ?? '';
+    const hiringSystem = restaurantScene.iceCreamProduction.hiringSystem;
+    canvas.dataset.upgradeRoom = hiringSystem?.upgradeRoomId ?? '';
+    canvas.dataset.managerUpgrades = hiringSystem?.getUpgradeCards()
+      .map(({ id, level, maxLevel, managerHired }) => `${id}:${level}/${maxLevel}:${managerHired ? 'open' : 'locked'}`)
+      .join('|') ?? '';
+    canvas.dataset.workerCount = String(hiringSystem?.workerCount ?? 0);
+    canvas.dataset.workerSpeedLevel = String(hiringSystem?.workerSpeedLevel ?? 0);
+    canvas.dataset.playerSpeedMultiplier = String(hiringSystem?.playerSpeedMultiplier ?? 1);
+    canvas.dataset.profitMultiplier = String(hiringSystem?.profitMultiplier ?? 1);
+    canvas.dataset.customerStates = characterSystem.customers
+      .map(({ definition, state, seatId }) => (
+        `${definition.id}:${state}${seatId ? `@${seatId}` : ''}`
+      ))
+      .join('|');
   }
   const playerPosition = characterSystem?.player?.model.position;
   if (playerPosition) cameraController.follow(playerPosition);
@@ -225,6 +316,7 @@ async function boot() {
       iceCreamMachines: restaurantScene.iceCreamProduction.machines.length,
       productionAssets: restaurantScene.iceCreamProduction.supports.length,
       productionColliders: restaurantScene.productionColliders.length,
+      interactionColliders: restaurantScene.interactionColliders.length,
       renderer: renderer.capabilities.isWebGL2 ? 'WebGL 2' : 'WebGL 1',
     });
   } catch (error) {

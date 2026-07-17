@@ -85,6 +85,21 @@ function startEntranceAnimation(root, animations) {
   return mixer;
 }
 
+function applyLocalDebugStart(characterSystem) {
+  if (location.hostname !== '127.0.0.1') return;
+  const start = new URLSearchParams(location.search).get('start');
+  const positions = {
+    gym: [13.05, -3],
+    wc: [13.05, 3],
+    trash: [7.2, 5.05],
+  };
+  const position = positions[start];
+  if (!position || !characterSystem.player) return;
+  characterSystem.player.model.position.x = position[0];
+  characterSystem.player.model.position.z = position[1];
+  characterSystem.playerMarker.position.set(position[0], 0.055, position[1]);
+}
+
 export async function createRestaurantScene(scene, onProgress) {
   const loader = new GLTFLoader();
   const world = new THREE.Group();
@@ -129,14 +144,16 @@ export async function createRestaurantScene(scene, onProgress) {
   world.add(iceCreamShop.group);
   world.add(iceCreamProduction.group);
   const wallColliders = createWallColliders(restaurant);
+  world.add(characterSystem.group);
+  iceCreamProduction.bindCharacterSystem(characterSystem);
+  applyLocalDebugStart(characterSystem);
   const playerColliders = Object.freeze([
     ...wallColliders,
     ...iceCreamShop.colliders,
     ...iceCreamProduction.colliders,
+    ...iceCreamProduction.interactionColliders,
   ]);
   characterSystem.setPlayerColliders(playerColliders);
-  world.add(characterSystem.group);
-  iceCreamProduction.bindCharacterSystem(characterSystem);
 
   const placementZones = new PlacementZones(PLACEMENT_ZONES);
   world.add(placementZones.group);
@@ -157,6 +174,7 @@ export async function createRestaurantScene(scene, onProgress) {
     wallColliders,
     furnitureColliders: iceCreamShop.colliders,
     productionColliders: iceCreamProduction.colliders,
+    interactionColliders: iceCreamProduction.interactionColliders,
     playerColliders,
     bounds,
     size,
@@ -164,6 +182,7 @@ export async function createRestaurantScene(scene, onProgress) {
       mixer?.update(delta);
       characterSystem.update(delta, elapsed);
       iceCreamProduction.update(delta, elapsed);
+      iceCreamProduction.updateHiring(delta, elapsed);
       placementZones.update(elapsed);
     },
     dispose() {

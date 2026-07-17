@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { WORLD_CONFIG } from './config.js';
+import { TableCleanupSystem } from './table-cleanup-system.js';
+import { HiringSystem } from './hiring-system.js';
 
 const MACHINE_DEFINITIONS = Object.freeze([
   Object.freeze({
@@ -36,31 +38,29 @@ const MACHINE_DEFINITIONS = Object.freeze([
 const PRODUCTS_URL = new URL('../ice_cream_glb/products_all.glb', import.meta.url).href;
 const SUPPORTS_URL = new URL('../ice_cream_glb/trays_support_all.glb', import.meta.url).href;
 const SERVE_POINT = Object.freeze([1.55, 0.08, -2.12]);
+const CASH_POINT = Object.freeze([6.05, 0.08, -0.05]);
 const INTERACTION_RADIUS = 0.82;
+const CASH_PICKUP_RADIUS = 1;
+const MAX_CASH_BILLS = 24;
 const FLAVOR_SEQUENCE = Object.freeze(['vanilla', 'strawberry', 'chocolate', 'mint']);
+const ORDER_FLAVOR_COLORS = Object.freeze({
+  vanilla: '#ffe7a0',
+  strawberry: '#ff7690',
+  chocolate: '#9b583c',
+  mint: '#63e2b7',
+});
+const ORDER_FLAVOR_LABELS = Object.freeze({
+  vanilla: 'VANILLA',
+  strawberry: 'STRAWBERRY',
+  chocolate: 'CHOCOLATE',
+  mint: 'MINT',
+});
 
 const SUPPORT_LAYOUT = Object.freeze([
   Object.freeze({ id: 'basic-topping', source: 'Support_BasicToppingStation', position: [-7.78, 0.02, -0.7], rotation: Math.PI / 2, collider: true, station: 'topping' }),
   Object.freeze({ id: 'cone-dispenser', source: 'Support_ConeDispenser', position: [3.6, 0.02, -3.1], rotation: -Math.PI / 2, collider: true, station: 'cone' }),
   Object.freeze({ id: 'cup-dispenser', source: 'Support_CupDispenser', position: [3.6, 0.02, -4.35], rotation: -Math.PI / 2, collider: true, station: 'cup' }),
   Object.freeze({ id: 'spoon-wafer-dispenser', source: 'Support_SpoonWaferDispenser', position: [3.6, 0.02, -5.6], rotation: -Math.PI / 2, collider: true, station: 'spoon' }),
-
-  Object.freeze({ id: 'starter-storage-shelf', source: 'Support_StarterStorageShelf', position: [12.8, 0.02, -5.3], rotation: 0, collider: true }),
-  Object.freeze({ id: 'premium-freezer', source: 'Support_PremiumFreezer', position: [15.05, 0.02, -4.2], rotation: -Math.PI / 2, collider: true }),
-  Object.freeze({ id: 'improved-refrigeration', source: 'Support_ImprovedRefrigeratedStorage', position: [15.05, 0.02, -1.5], rotation: -Math.PI / 2, collider: true }),
-  Object.freeze({ id: 'storage-chest', source: 'Support_StorageChest', position: [12.8, 0.02, -0.95], rotation: Math.PI, collider: true }),
-  Object.freeze({ id: 'tray-single-storage', source: 'Tray_1_Order', position: [12.05, 0.35, -5.18], rotation: 0, collider: false }),
-  Object.freeze({ id: 'tray-four-storage', source: 'Tray_4_Order', position: [12.8, 1.13, -5.18], rotation: 0, collider: false }),
-  Object.freeze({ id: 'tray-eight-storage', source: 'Tray_8_Order', position: [15.05, 2.69, -4.2], rotation: Math.PI / 2, collider: false }),
-
-  Object.freeze({ id: 'ice-cream-holder', source: 'Support_IceCreamHolder', position: [12.2, 0.02, 0.75], rotation: 0, collider: true, displayProducts: true }),
-  Object.freeze({ id: 'syrup-bottles', source: 'Support_SyrupBottleSet', position: [13.75, 0.02, 0.65], rotation: 0, collider: true }),
-  Object.freeze({ id: 'napkin-holder', source: 'Support_NapkinHolder', position: [15.15, 0.02, 0.65], rotation: 0, collider: true }),
-  Object.freeze({ id: 'purchase-pad', source: 'Upgrade_CashPurchasePad', position: [14.25, 0.02, 1.85], rotation: 0, collider: false }),
-  Object.freeze({ id: 'speed-upgrade', source: 'Upgrade_SpeedBoosterModule', position: [12.05, 0.02, 4.05], rotation: 0, collider: true }),
-  Object.freeze({ id: 'auto-dispense-upgrade', source: 'Upgrade_AutoDispenseModule', position: [12.05, 0.02, 5.15], rotation: Math.PI, collider: true }),
-  Object.freeze({ id: 'capacity-upgrade', source: 'Upgrade_CapacityModule', position: [13.55, 0.02, 5.15], rotation: Math.PI, collider: true }),
-  Object.freeze({ id: 'deluxe-topping', source: 'Support_DeluxeToppingStation', position: [15.15, 0.02, 4.05], rotation: -Math.PI / 2, collider: true }),
 ]);
 
 const PRODUCT_NAMES = Object.freeze({
@@ -226,6 +226,175 @@ function squaredDistanceXZ(position, target) {
   return deltaX * deltaX + deltaZ * deltaZ;
 }
 
+function roundedRectPath(context, x, y, width, height, radius) {
+  context.beginPath();
+  context.moveTo(x + radius, y);
+  context.lineTo(x + width - radius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + radius);
+  context.lineTo(x + width, y + height - radius);
+  context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  context.lineTo(x + radius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - radius);
+  context.lineTo(x, y + radius);
+  context.quadraticCurveTo(x, y, x + radius, y);
+  context.closePath();
+}
+
+function createOrderBubble(order) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 384;
+  canvas.height = 184;
+  const context = canvas.getContext('2d');
+  context.clearRect(0, 0, canvas.width, canvas.height);
+
+  roundedRectPath(context, 10, 8, 354, 142, 28);
+  context.fillStyle = 'rgba(40, 42, 37, 0.92)';
+  context.fill();
+  context.lineWidth = 7;
+  context.strokeStyle = 'rgba(255, 255, 246, 0.96)';
+  context.stroke();
+  context.beginPath();
+  context.moveTo(164, 148);
+  context.lineTo(194, 178);
+  context.lineTo(220, 148);
+  context.closePath();
+  context.fillStyle = 'rgba(40, 42, 37, 0.92)';
+  context.fill();
+  context.lineWidth = 7;
+  context.strokeStyle = 'rgba(255, 255, 246, 0.96)';
+  context.stroke();
+
+  const flavorColor = ORDER_FLAVOR_COLORS[order.flavor];
+  context.fillStyle = flavorColor;
+  context.beginPath();
+  context.arc(77, 62, 35, 0, Math.PI * 2);
+  context.fill();
+  context.lineWidth = 5;
+  context.strokeStyle = '#5a3c2d';
+  context.stroke();
+  context.fillStyle = 'rgba(255,255,255,0.45)';
+  context.beginPath();
+  context.arc(65, 50, 9, 0, Math.PI * 2);
+  context.fill();
+
+  if (order.container === 'cone') {
+    context.fillStyle = '#e7ad61';
+    context.beginPath();
+    context.moveTo(48, 83);
+    context.lineTo(106, 83);
+    context.lineTo(77, 137);
+    context.closePath();
+    context.fill();
+    context.strokeStyle = '#8f5d36';
+    context.lineWidth = 4;
+    context.stroke();
+  } else {
+    roundedRectPath(context, 47, 82, 60, 52, 10);
+    context.fillStyle = '#f9f1df';
+    context.fill();
+    context.strokeStyle = '#8c806f';
+    context.lineWidth = 4;
+    context.stroke();
+  }
+
+  context.textAlign = 'center';
+  context.fillStyle = '#ffffff';
+  context.font = '900 35px Arial, sans-serif';
+  context.fillText(ORDER_FLAVOR_LABELS[order.flavor], 241, 62);
+  context.fillStyle = '#d8ffd2';
+  context.font = '800 27px Arial, sans-serif';
+  context.fillText(`${order.container.toUpperCase()}  •  1`, 241, 108);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.name = `Order_Bubble_${order.flavor}_${order.container}`;
+  sprite.position.set(0, 3.35, 0);
+  sprite.scale.set(3, 1.44, 1);
+  sprite.renderOrder = 80;
+  return sprite;
+}
+
+function createCashNoteTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 144;
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#50e531';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.strokeStyle = '#209f20';
+  context.lineWidth = 10;
+  context.strokeRect(5, 5, canvas.width - 10, canvas.height - 10);
+  context.fillStyle = '#d5ff78';
+  context.fillRect(88, 31, 80, 82);
+  context.fillRect(22, 20, 38, 28);
+  context.fillRect(196, 96, 38, 28);
+  context.fillStyle = '#9ef146';
+  context.beginPath();
+  context.arc(128, 72, 21, 0, Math.PI * 2);
+  context.fill();
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  return texture;
+}
+
+function createCashPile() {
+  const group = new THREE.Group();
+  group.name = 'Uncollected_Cash_Pile';
+  group.position.set(...CASH_POINT);
+  group.visible = false;
+
+  const bills = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.78, 0.09, 0.44),
+    new THREE.MeshStandardMaterial({ color: 0x52df31, roughness: 0.72 }),
+    MAX_CASH_BILLS,
+  );
+  const accents = new THREE.InstancedMesh(
+    new THREE.PlaneGeometry(0.72, 0.38),
+    new THREE.MeshBasicMaterial({ map: createCashNoteTexture() }),
+    MAX_CASH_BILLS,
+  );
+  bills.name = 'Cash_Bills';
+  accents.name = 'Cash_Bill_Accents';
+  bills.castShadow = true;
+  bills.receiveShadow = true;
+  accents.castShadow = true;
+  const matrix = new THREE.Matrix4();
+  const position = new THREE.Vector3();
+  const rotation = new THREE.Quaternion();
+  const scale = new THREE.Vector3(1, 1, 1);
+  const upAxis = new THREE.Vector3(0, 1, 0);
+  const accentEuler = new THREE.Euler();
+  for (let index = 0; index < MAX_CASH_BILLS; index += 1) {
+    const layer = Math.floor(index / 6);
+    const slot = index % 6;
+    position.set((slot % 3 - 1) * 0.5, 0.05 + layer * 0.105, (Math.floor(slot / 3) - 0.5) * 0.34);
+    rotation.setFromAxisAngle(upAxis, (index % 2 ? 1 : -1) * 0.04);
+    matrix.compose(position, rotation, scale);
+    bills.setMatrixAt(index, matrix);
+    position.y += 0.048;
+    rotation.setFromEuler(accentEuler.set(-Math.PI / 2, (index % 2 ? 1 : -1) * 0.04, 0));
+    matrix.compose(position, rotation, scale);
+    accents.setMatrixAt(index, matrix);
+  }
+  bills.count = 0;
+  accents.count = 0;
+  group.add(bills, accents);
+  return { group, bills, accents };
+}
+
 function disposeObjectResources(roots) {
   const geometries = new Set();
   const materials = new Set();
@@ -269,11 +438,24 @@ export class IceCreamProductionSystem {
     this.dispenseReadyAt = 0;
     this.serveReadyAt = 0;
     this.nextOrderAt = 0;
-    const debugOrder = location.hostname === '127.0.0.1'
-      ? Number(new URLSearchParams(location.search).get('order'))
+    const debugParameters = location.hostname === '127.0.0.1'
+      ? new URLSearchParams(location.search)
+      : null;
+    const debugOrder = debugParameters
+      ? Number(debugParameters.get('order'))
       : 0;
     this.servedCount = Number.isInteger(debugOrder) && debugOrder >= 0 ? debugOrder : 0;
-    this.cash = 0;
+    const debugCash = debugParameters ? Number(debugParameters.get('cash')) : 0;
+    this.cash = Number.isInteger(debugCash) && debugCash >= 0 ? debugCash : 0;
+    this.pendingCash = 0;
+    this.pendingPayments = 0;
+    this.lastCollectedAmount = 0;
+    this.orderBubbles = new Map();
+    this.customerProducts = new Map();
+    this.tableCleanup = null;
+    this.hiringSystem = null;
+    this.interactionColliders = Object.freeze([]);
+    this.suspendedTargetMarkerId = null;
     this.statusRevision = 0;
     this.status = Object.freeze({
       title: 'Customer approaching',
@@ -281,6 +463,13 @@ export class IceCreamProductionSystem {
     });
     this.targetMarkerId = null;
 
+    this.cashPile = createCashPile();
+    this.group.add(this.cashPile.group);
+    this.cashMarker = createInteractionMarker(
+      new THREE.Vector3(CASH_POINT[0], CASH_POINT[1], CASH_POINT[2]),
+      0x55ef3c,
+    );
+    this.group.add(this.cashMarker);
     this._buildStations();
     this._buildCarryRig();
   }
@@ -349,6 +538,14 @@ export class IceCreamProductionSystem {
     const playerModel = characterSystem.player?.model;
     if (!playerModel) throw new Error('IceCreamProductionSystem requires the player character');
     playerModel.add(this.carryRig);
+    this.tableCleanup = new TableCleanupSystem(characterSystem);
+    this.group.add(this.tableCleanup.group);
+    this.hiringSystem = new HiringSystem(characterSystem, this);
+    this.group.add(this.hiringSystem.group);
+    this.interactionColliders = Object.freeze([
+      ...this.tableCleanup.colliders,
+      ...this.hiringSystem.colliders,
+    ]);
   }
 
   _setCarryProduct(productName) {
@@ -364,6 +561,156 @@ export class IceCreamProductionSystem {
     this.carryRig.visible = false;
     this.carryProducts.forEach((product) => { product.visible = false; });
     this.activeCarryProduct = null;
+  }
+
+  _showOrderBubble(customer, order) {
+    const existing = this.orderBubbles.get(customer.definition.id);
+    if (existing) {
+      existing.visible = true;
+      return;
+    }
+    const bubble = createOrderBubble(order);
+    customer.model.add(bubble);
+    this.orderBubbles.set(customer.definition.id, bubble);
+  }
+
+  _hideOrderBubble(customer) {
+    const bubble = this.orderBubbles.get(customer?.definition.id);
+    if (bubble) bubble.visible = false;
+  }
+
+  _showCustomerProduct(customer, order) {
+    const productName = PRODUCT_NAMES[order.flavor][order.container];
+    const product = cloneAsset(this.productsScene, productName);
+    product.name = `Customer_Meal_${customer.definition.id}`;
+    product.position.set(0, 1.24, 0.45);
+    product.scale.setScalar(0.52);
+    configureObject(product);
+    customer.model.add(product);
+    this.customerProducts.set(customer.definition.id, { customer, product });
+  }
+
+  _syncCustomerDiningVisuals() {
+    this.customerProducts.forEach(({ customer, product }) => {
+      const mealVisible = customer.state === 'paying'
+        || customer.state === 'walking-to-seat'
+        || customer.state === 'seated'
+        || customer.state === 'eating';
+      product.visible = mealVisible;
+      if (customer.state === 'seated' || customer.state === 'eating') {
+        product.position.set(0, 1.02, 0.42);
+      } else {
+        product.position.set(0, 1.24, 0.45);
+      }
+    });
+  }
+
+  _syncCashPile() {
+    const visibleBillCount = Math.min(MAX_CASH_BILLS, this.pendingPayments * 6);
+    this.cashPile.bills.count = visibleBillCount;
+    this.cashPile.accents.count = visibleBillCount;
+    this.cashPile.bills.instanceMatrix.needsUpdate = true;
+    this.cashPile.accents.instanceMatrix.needsUpdate = true;
+    this.cashPile.group.visible = this.pendingCash > 0;
+    this.cashMarker.visible = this.pendingCash > 0;
+  }
+
+  _addPendingCash(amount) {
+    this.pendingCash += amount;
+    this.pendingPayments += 1;
+    this._syncCashPile();
+  }
+
+  _tryCollectCash(playerPosition) {
+    if (this.pendingCash <= 0) return;
+    const deltaX = playerPosition.x - CASH_POINT[0];
+    const deltaZ = playerPosition.z - CASH_POINT[2];
+    if (deltaX * deltaX + deltaZ * deltaZ > CASH_PICKUP_RADIUS * CASH_PICKUP_RADIUS) return;
+
+    const collected = this.pendingCash;
+    this.cash += collected;
+    this.pendingCash = 0;
+    this.pendingPayments = 0;
+    this.lastCollectedAmount = collected;
+    this._syncCashPile();
+    this.characterSystem.playPlayerAction('Pickup', 0.48);
+    if (this.stage === 'waiting' || this.stage === 'complete') {
+      this._setStatus('Cash collected!', `+$${collected} added to your total`);
+    }
+  }
+
+  _handleTableCleanup(elapsed, playerPosition) {
+    if (!this.tableCleanup) return false;
+    const event = this.tableCleanup.update(elapsed, playerPosition, !this.activeCarryProduct);
+    if (!event) return false;
+
+    if (event.type === 'picked-up') {
+      this.suspendedTargetMarkerId = this.targetMarkerId;
+      this._setTargetMarker(null);
+      this._setStatus('Take the garbage to the trash bin', 'Carry it to the glowing green bin across the dining room');
+      return true;
+    }
+
+    if (event.type === 'carrying') {
+      this._setStatus('Throw away the table garbage', 'Walk to the glowing green trash bin to finish cleaning');
+      return true;
+    }
+
+    if (event.type === 'disposed') {
+      this._setTargetMarker(this.suspendedTargetMarkerId);
+      this.suspendedTargetMarkerId = null;
+      if (this.activeOrder && this.stage === 'need-container') {
+        this._setStatus(
+          `Pick up a ${this.activeOrder.container}`,
+          `The table is clean — continue the ${this.activeOrder.flavor} order at the glowing dispenser`,
+        );
+      } else {
+        this._setStatus(
+          'Table cleaned and ready!',
+          `${this.characterSystem.availableSeatCount} seats are now available for customers`,
+        );
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  _completeService(service, elapsed) {
+    const order = this.activeOrder;
+    const basePayment = order.container === 'cup' ? 20 : 15;
+    const profitMultiplier = this.hiringSystem?.profitMultiplier ?? 1;
+    const payment = basePayment * profitMultiplier;
+    this._hideOrderBubble(service.customer);
+    this._showCustomerProduct(service.customer, order);
+    this._clearCarryProduct();
+    this.characterSystem.setPlayerCarrying(false);
+    this._addPendingCash(payment);
+    this.servedCount += 1;
+    this.activeOrder = null;
+    this.stage = 'waiting';
+    this.nextOrderAt = elapsed + 0.55;
+    this._setStatus(
+      'Payment stacked on the left of the counter',
+      `Walk to the cash pile to collect $${this.pendingCash}`,
+    );
+  }
+
+  spendCash(amount) {
+    const requested = Math.max(0, Math.floor(amount));
+    const spent = Math.min(requested, this.cash);
+    this.cash -= spent;
+    return spent;
+  }
+
+  setStatus(title, detail) {
+    this._setStatus(title, detail);
+  }
+
+  updateHiring(delta, elapsed) {
+    const playerPosition = this.characterSystem?.player?.model.position;
+    if (!playerPosition) return;
+    this.hiringSystem?.update(delta, elapsed, playerPosition);
   }
 
   _setStatus(title, detail) {
@@ -382,18 +729,24 @@ export class IceCreamProductionSystem {
   _startOrder() {
     const flavor = FLAVOR_SEQUENCE[this.servedCount % FLAVOR_SEQUENCE.length];
     const container = this.servedCount % 2 === 0 ? 'cone' : 'cup';
-    this.activeOrder = Object.freeze({ flavor, container });
+    const order = Object.freeze({ flavor, container });
+    const customer = this.characterSystem.assignFrontCustomerOrder(order);
+    if (!customer) return false;
+    this.activeOrder = order;
+    this._showOrderBubble(customer, order);
     this.stage = 'need-container';
     this._setTargetMarker(`station-${container}`);
     this._setStatus(
       `Pick up a ${container}`,
       `Walk to the glowing ${container} dispenser for the ${flavor} order`,
     );
+    return true;
   }
 
   _triggerMachine(machine, elapsed) {
     machine.preview && (machine.preview.visible = true);
-    machine.dispensingUntil = elapsed + 0.82;
+    const productionSpeed = this.hiringSystem?.productionSpeedMultiplier ?? 1;
+    machine.dispensingUntil = elapsed + 0.82 / productionSpeed;
     playMachineAction(machine, '_Machine_Dispense');
     playMachineAction(machine, '_Product_Pop');
     playMachineAction(machine, '_Tray_Load');
@@ -405,9 +758,13 @@ export class IceCreamProductionSystem {
 
   _updateMarkers(elapsed) {
     const marker = this.targetMarkerId ? this.markers.get(this.targetMarkerId) : null;
-    if (!marker) return;
-    const pulse = 1 + Math.sin(elapsed * 4.4) * 0.08;
-    marker.scale.setScalar(pulse);
+    if (marker) {
+      const pulse = 1 + Math.sin(elapsed * 4.4) * 0.08;
+      marker.scale.setScalar(pulse);
+    }
+    if (this.cashMarker.visible) {
+      this.cashMarker.scale.setScalar(1 + Math.sin(elapsed * 4.8) * 0.1);
+    }
   }
 
   update(delta, elapsed) {
@@ -417,17 +774,45 @@ export class IceCreamProductionSystem {
         machine.preview.visible = false;
       }
     });
+    this._syncCustomerDiningVisuals();
     this._updateMarkers(elapsed);
 
     const player = this.characterSystem?.player;
     if (!player) return;
     const playerPosition = player.model.position;
+    this._tryCollectCash(playerPosition);
+    if (this._handleTableCleanup(elapsed, playerPosition)) return;
 
     if (this.stage === 'waiting') {
       if (this.servedCount >= this.characterSystem.customers.length) {
-        this.stage = 'complete';
         this._setTargetMarker(null);
-        this._setStatus('Ice cream rush complete!', `${this.servedCount} customers served successfully`);
+        const allDeparted = this.characterSystem.customers.every(({ state }) => state === 'departed');
+        if (allDeparted) {
+          if (this.characterSystem.dirtyTableCount > 0) {
+            this._setStatus(
+              'Clean the remaining dining tables',
+              `${this.characterSystem.dirtyTableCount} table${this.characterSystem.dirtyTableCount === 1 ? '' : 's'} must be cleaned before closing`,
+            );
+          } else {
+            this.stage = 'complete';
+            this._setStatus(
+              this.pendingCash > 0 ? 'Collect the final cash stack' : 'Ice cream rush complete!',
+              this.pendingCash > 0
+                ? `$${this.pendingCash} is waiting on the left side of the counter`
+                : `${this.servedCount} customers served successfully`,
+            );
+          }
+        } else if (this.characterSystem.cleanableTableCount > 0) {
+          this._setStatus(
+            'A dining table needs cleaning',
+            'Pick up the glowing garbage, then carry it to the green trash bin',
+          );
+        } else {
+          this._setStatus(
+            'Customers are enjoying their ice cream',
+            `${this.characterSystem.activeDiningCount} guests are seated or heading to a table`,
+          );
+        }
         return;
       }
 
@@ -439,6 +824,21 @@ export class IceCreamProductionSystem {
         this._setTargetMarker(null);
         this._setStatus('Customer approaching', 'The next guest is walking to the order counter');
       }
+      return;
+    }
+
+    if (this.stage === 'waiting-for-table') {
+      if (this.characterSystem.availableSeatCount <= 0) {
+        this._setStatus(
+          this.characterSystem.cleanableTableCount > 0 ? 'Clean a table for this customer' : 'Waiting for diners to finish',
+          this.characterSystem.cleanableTableCount > 0
+            ? 'Pick up the glowing garbage and throw it in the green trash bin'
+            : 'The completed order is safe at the counter until a table becomes cleanable',
+        );
+        return;
+      }
+      const service = this.characterSystem.serveFrontCustomer(elapsed, this.activeOrder);
+      if (service.ok) this._completeService(service, elapsed);
       return;
     }
 
@@ -463,7 +863,8 @@ export class IceCreamProductionSystem {
       this._triggerMachine(machine, elapsed);
       this.characterSystem.playPlayerAction('Pickup');
       this.stage = 'dispensing';
-      this.dispenseReadyAt = elapsed + 0.74;
+      const productionSpeed = this.hiringSystem?.productionSpeedMultiplier ?? 1;
+      this.dispenseReadyAt = elapsed + 0.74 / productionSpeed;
       this._setTargetMarker(null);
       this._setStatus(`Dispensing ${machine.label.toLowerCase()}…`, 'The machine is filling the order tray');
       return;
@@ -502,30 +903,44 @@ export class IceCreamProductionSystem {
       if (!servePoint || !this._near(playerPosition, servePoint)) return;
       this.characterSystem.playPlayerAction('Serve');
       this.stage = 'serving';
-      this.serveReadyAt = elapsed + 0.62;
+      const productionSpeed = this.hiringSystem?.productionSpeedMultiplier ?? 1;
+      this.serveReadyAt = elapsed + 0.62 / productionSpeed;
       this._setTargetMarker(null);
       this._setStatus('Order served!', 'The customer is happy and the queue is moving forward');
       return;
     }
 
     if (this.stage === 'serving' && elapsed >= this.serveReadyAt) {
-      const served = this.characterSystem.serveFrontCustomer(elapsed);
-      if (!served) return;
-      this._clearCarryProduct();
-      this.characterSystem.setPlayerCarrying(false);
-      this.cash += this.activeOrder.container === 'cup' ? 20 : 15;
-      this.servedCount += 1;
-      this.activeOrder = null;
-      this.stage = 'waiting';
-      this.nextOrderAt = elapsed + 0.55;
-      this.statusRevision += 1;
+      const service = this.characterSystem.serveFrontCustomer(elapsed, this.activeOrder);
+      if (!service.ok) {
+        if (service.reason === 'no-seat') {
+          this._clearCarryProduct();
+          this.characterSystem.setPlayerCarrying(false);
+          this.stage = 'waiting-for-table';
+          this._setStatus(
+            this.characterSystem.cleanableTableCount > 0 ? 'Clean a table to free seats' : 'Waiting for a free table',
+            this.characterSystem.cleanableTableCount > 0
+              ? 'Pick up the glowing table garbage and throw it in the trash bin'
+              : 'The completed order is waiting safely at the counter',
+          );
+        }
+        return;
+      }
+      this._completeService(service, elapsed);
     }
   }
 
   dispose() {
     this.machines.forEach(({ mixer }) => mixer.stopAllAction());
+    this.tableCleanup?.dispose();
+    this.hiringSystem?.dispose();
+    const detachedVisuals = [
+      ...this.orderBubbles.values(),
+      ...[...this.customerProducts.values()].map(({ product }) => product),
+    ];
+    detachedVisuals.forEach((visual) => visual.removeFromParent());
     this.carryRig.removeFromParent();
-    disposeObjectResources([this.group, this.carryRig]);
+    disposeObjectResources([this.group, this.carryRig, ...detachedVisuals]);
   }
 }
 

@@ -39,6 +39,37 @@
           Build slots
         </button>
 
+        <section id="manager-upgrades" class="manager-upgrades hud-interactive" aria-label="Manager upgrades" hidden>
+          <header class="manager-upgrades__header">
+            <span>MANAGER OFFICE</span>
+            <strong>Choose an upgrade</strong>
+            <small>Spend collected cash to improve the shop</small>
+          </header>
+          <div class="manager-upgrades__cards">
+            <button class="manager-card" type="button" data-upgrade="workers">
+              <span class="manager-card__icon" aria-hidden="true">+</span>
+              <strong>More workers</strong>
+              <small>Add active ice cream staff</small>
+              <span class="manager-card__levels" aria-label="Level 0 of 4"><i></i><i></i><i></i><i></i></span>
+              <span class="manager-card__price">$30</span>
+            </button>
+            <button class="manager-card" type="button" data-upgrade="worker-speed">
+              <span class="manager-card__icon manager-card__icon--speed" aria-hidden="true">&raquo;</span>
+              <strong>Worker speed</strong>
+              <small>Move and prepare orders faster</small>
+              <span class="manager-card__levels" aria-label="Level 0 of 4"><i></i><i></i><i></i><i></i></span>
+              <span class="manager-card__price">$25</span>
+            </button>
+            <button class="manager-card" type="button" data-upgrade="wc-boost">
+              <span class="manager-card__icon manager-card__icon--profit" aria-hidden="true">2x</span>
+              <strong>Player + profit</strong>
+              <small>Faster player and double payments</small>
+              <span class="manager-card__levels manager-card__levels--single" aria-label="Not purchased"><i></i></span>
+              <span class="manager-card__price">$120</span>
+            </button>
+          </div>
+        </section>
+
         <div id="movement-stick" class="movement-stick" aria-hidden="true">
           <span></span>
         </div>

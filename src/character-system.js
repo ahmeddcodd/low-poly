@@ -31,15 +31,78 @@ const LOOPING_ANIMATIONS = new Set([
   'Carry_Idle',
   'Carry_Walk',
   'Sit',
+  'Eat',
 ]);
 const PLAYER_SPEED = 4.25;
 const CUSTOMER_SPEED = 1.75;
 const CUSTOMER_SPAWN_DELAY = 0.35;
 const CUSTOMER_SPAWN_INTERVAL = 1.1;
+const CUSTOMER_EATING_DURATION = 7.2;
 const CUSTOMER_ENTRY_POSITION = Object.freeze([-2.5, 8.15]);
 const CUSTOMER_ENTRY_INSIDE = Object.freeze([-2.5, 6.72]);
 const PLAYER_START_POSITION = Object.freeze([0, -2.5]);
 const ORDER_COUNTER_POINT = Object.freeze([1.55, -0.82]);
+const DINING_TABLE_DEFINITIONS = Object.freeze([
+  Object.freeze({
+    id: 'compact-table',
+    position: Object.freeze([-4.3, 0.8, 3.6]),
+    interactionPoint: Object.freeze([-4.3, 2.65]),
+  }),
+  Object.freeze({
+    id: 'dining-set-north',
+    position: Object.freeze([-6.5, 0.8, 2.45]),
+    interactionPoint: Object.freeze([-6.5, 1.35]),
+  }),
+  Object.freeze({
+    id: 'dining-set-center',
+    position: Object.freeze([-6.5, 0.8, 5]),
+    interactionPoint: Object.freeze([-6.5, 5.95]),
+  }),
+]);
+const DINING_SEAT_DEFINITIONS = Object.freeze([
+  Object.freeze({
+    id: 'compact-mint',
+    tableId: 'compact-table',
+    position: Object.freeze([-5.3, 3.6]),
+    face: Object.freeze([-4.3, 3.6]),
+    route: Object.freeze([Object.freeze([-2.25, 2.65]), Object.freeze([-5.3, 2.65])]),
+  }),
+  Object.freeze({
+    id: 'compact-coral',
+    tableId: 'compact-table',
+    position: Object.freeze([-3.3, 3.6]),
+    face: Object.freeze([-4.3, 3.6]),
+    route: Object.freeze([Object.freeze([-2.25, 2.65]), Object.freeze([-3.3, 2.65])]),
+  }),
+  Object.freeze({
+    id: 'north-left',
+    tableId: 'dining-set-north',
+    position: Object.freeze([-7.49, 2.45]),
+    face: Object.freeze([-6.5, 2.45]),
+    route: Object.freeze([Object.freeze([-2.4, 1.35]), Object.freeze([-7.49, 1.35])]),
+  }),
+  Object.freeze({
+    id: 'north-right',
+    tableId: 'dining-set-north',
+    position: Object.freeze([-5.51, 2.45]),
+    face: Object.freeze([-6.5, 2.45]),
+    route: Object.freeze([Object.freeze([-2.4, 1.35]), Object.freeze([-5.51, 1.35])]),
+  }),
+  Object.freeze({
+    id: 'center-left',
+    tableId: 'dining-set-center',
+    position: Object.freeze([-7.49, 5]),
+    face: Object.freeze([-6.5, 5]),
+    route: Object.freeze([Object.freeze([-2.2, 5.95]), Object.freeze([-7.49, 5.95])]),
+  }),
+  Object.freeze({
+    id: 'center-right',
+    tableId: 'dining-set-center',
+    position: Object.freeze([-5.51, 5]),
+    face: Object.freeze([-6.5, 5]),
+    route: Object.freeze([Object.freeze([-2.2, 5.95]), Object.freeze([-5.51, 5.95])]),
+  }),
+]);
 const CUSTOMER_QUEUE_SLOTS = Object.freeze([
   Object.freeze([1.55, 0.55]),
   Object.freeze([2.55, 1.45]),
@@ -238,9 +301,19 @@ export class CharacterSystem {
     this.playerInput = new THREE.Vector3();
     this.mixers = [];
     this.playerColliders = [];
+    this.playerSpeedMultiplier = 1;
     this.playerCarrying = false;
     this.playerActionUntil = 0;
     this.elapsed = 0;
+    this.diningTables = DINING_TABLE_DEFINITIONS.map((definition) => ({
+      ...definition,
+      state: 'clean',
+      garbageCount: 0,
+    }));
+    this.diningSeats = DINING_SEAT_DEFINITIONS.map((definition) => ({
+      ...definition,
+      occupiedBy: null,
+    }));
     this.playerMarker = createPlayerMarker();
     this.group.add(this.playerMarker);
   }
@@ -272,6 +345,9 @@ export class CharacterSystem {
       character.queueIndex = queueIndex;
       character.state = 'waiting-to-enter';
       character.spawnAt = CUSTOMER_SPAWN_DELAY + queueIndex * CUSTOMER_SPAWN_INTERVAL;
+      character.order = null;
+      character.seatId = null;
+      character.mealUntil = 0;
       character.route = [
         CUSTOMER_ENTRY_INSIDE,
         ...CUSTOMER_QUEUE_SLOTS.slice(queueIndex).reverse(),
@@ -290,6 +366,10 @@ export class CharacterSystem {
 
   setPlayerInput(direction) {
     this.playerInput.copy(direction);
+  }
+
+  setPlayerSpeedMultiplier(multiplier) {
+    this.playerSpeedMultiplier = THREE.MathUtils.clamp(Number(multiplier) || 1, 1, 2);
   }
 
   setPlayerColliders(colliders) {
@@ -322,6 +402,84 @@ export class CharacterSystem {
     return this.customers.filter(({ state }) => state === 'queued' || state === 'ordering').length;
   }
 
+  get availableSeatCount() {
+    return this.diningSeats.filter((seat) => {
+      const table = this.diningTables.find(({ id }) => id === seat.tableId);
+      return seat.occupiedBy === null && table?.state === 'clean';
+    }).length;
+  }
+
+  get dirtyTableCount() {
+    return this.diningTables.reduce((count, table) => (
+      count + (table.state === 'clean' ? 0 : 1)
+    ), 0);
+  }
+
+  get cleanableTableCount() {
+    return this.diningTables.reduce((count, table) => (
+      count + (this.canCleanTable(table.id) ? 1 : 0)
+    ), 0);
+  }
+
+  getDiningTable(tableId) {
+    return this.diningTables.find(({ id }) => id === tableId) ?? null;
+  }
+
+  isTableVacant(tableId) {
+    return this.diningSeats.every((seat) => (
+      seat.tableId !== tableId || seat.occupiedBy === null
+    ));
+  }
+
+  canCleanTable(tableId) {
+    const table = this.getDiningTable(tableId);
+    return table?.state === 'dirty' && this.isTableVacant(tableId);
+  }
+
+  beginTableCleanup(tableId) {
+    const table = this.getDiningTable(tableId);
+    if (!table || !this.canCleanTable(tableId)) return false;
+    table.state = 'garbage-carried';
+    return true;
+  }
+
+  completeTableCleanup(tableId) {
+    const table = this.getDiningTable(tableId);
+    if (!table || table.state !== 'garbage-carried') return false;
+    table.state = 'clean';
+    table.garbageCount = 0;
+    return true;
+  }
+
+  _markTableDirty(tableId) {
+    const table = this.getDiningTable(tableId);
+    if (!table || table.state === 'garbage-carried') return;
+    table.state = 'dirty';
+    table.garbageCount = Math.min(2, table.garbageCount + 1);
+  }
+
+  get activeDiningCount() {
+    return this.customers.filter(({ state }) => (
+      state === 'paying'
+      || state === 'walking-to-seat'
+      || state === 'seated'
+      || state === 'eating'
+      || state === 'meal-finished'
+    )).length;
+  }
+
+  getFrontCustomer() {
+    return this.customers.find((customer) => (
+      customer.queueIndex === 0 && customer.state === 'ordering'
+    )) ?? null;
+  }
+
+  assignFrontCustomerOrder(order) {
+    const customer = this.getFrontCustomer();
+    if (customer) customer.order = order;
+    return customer;
+  }
+
   _updatePlayer(delta) {
     if (!this.player) return;
     const { model, definition } = this.player;
@@ -330,7 +488,7 @@ export class CharacterSystem {
     if (strength > 0.05) {
       const directionX = this.playerInput.x / strength;
       const directionZ = this.playerInput.z / strength;
-      const step = PLAYER_SPEED * strength * delta;
+      const step = PLAYER_SPEED * this.playerSpeedMultiplier * strength * delta;
       const bounds = WORLD_CONFIG.playerBounds;
       const nextX = THREE.MathUtils.clamp(
         model.position.x + directionX * step,
@@ -376,11 +534,59 @@ export class CharacterSystem {
   _updateCustomers(delta, elapsed) {
     this.customers.forEach((customer) => {
       const { model, definition } = customer;
-      if (customer.state === 'celebrating') {
+      if (customer.state === 'paying') {
         if (elapsed < customer.stateUntil) return;
-        customer.state = 'leaving';
-        customer.route = [CUSTOMER_ENTRY_INSIDE, CUSTOMER_ENTRY_POSITION];
+        const seat = this.diningSeats.find(({ id }) => id === customer.seatId);
+        if (!seat) return;
+        customer.state = 'walking-to-seat';
+        customer.route = [...seat.route, seat.position];
         customer.routeIndex = 0;
+        this.setAnimation(definition.id, 'Walk_Customer');
+      }
+
+      if (customer.state === 'seated') {
+        const seat = this.diningSeats.find(({ id }) => id === customer.seatId);
+        if (seat) {
+          model.rotation.y = dampAngle(
+            model.rotation.y,
+            targetRotation(seat.face[0] - model.position.x, seat.face[1] - model.position.z),
+            delta,
+            10,
+          );
+        }
+        if (elapsed < customer.stateUntil) return;
+        customer.state = 'eating';
+        customer.mealUntil = elapsed + CUSTOMER_EATING_DURATION + (customer.index % 3) * 0.65;
+        this.setAnimation(definition.id, 'Eat', 0.18);
+      }
+
+      if (customer.state === 'eating') {
+        const seat = this.diningSeats.find(({ id }) => id === customer.seatId);
+        if (seat) {
+          model.rotation.y = dampAngle(
+            model.rotation.y,
+            targetRotation(seat.face[0] - model.position.x, seat.face[1] - model.position.z),
+            delta,
+            10,
+          );
+        }
+        if (elapsed < customer.mealUntil) return;
+        if (seat) this._markTableDirty(seat.tableId);
+        customer.state = 'meal-finished';
+        customer.stateUntil = elapsed + 0.62;
+        this.setAnimation(definition.id, 'Celebrate', 0.14);
+        return;
+      }
+
+      if (customer.state === 'meal-finished') {
+        if (elapsed < customer.stateUntil) return;
+        const seat = this.diningSeats.find(({ id }) => id === customer.seatId);
+        if (!seat) return;
+        seat.occupiedBy = null;
+        customer.state = 'leaving';
+        customer.route = [...seat.route].reverse().concat([CUSTOMER_ENTRY_INSIDE, CUSTOMER_ENTRY_POSITION]);
+        customer.routeIndex = 0;
+        customer.seatId = null;
         this.setAnimation(definition.id, 'Walk_Customer');
       }
 
@@ -391,7 +597,7 @@ export class CharacterSystem {
         this.setAnimation(definition.id, 'Walk_Customer');
       }
 
-      if (customer.state === 'walking' || customer.state === 'leaving') {
+      if (customer.state === 'walking' || customer.state === 'walking-to-seat' || customer.state === 'leaving') {
         const target = customer.route[customer.routeIndex];
         const deltaX = target[0] - model.position.x;
         const deltaZ = target[1] - model.position.z;
@@ -403,8 +609,13 @@ export class CharacterSystem {
           model.position.z = target[1];
           customer.routeIndex += 1;
           if (customer.routeIndex >= customer.route.length) {
-            if (customer.state === 'leaving') {
+            if (customer.state === 'walking-to-seat') {
+              customer.state = 'seated';
+              customer.stateUntil = elapsed + 0.5;
+              this.setAnimation(definition.id, 'Sit', 0.16);
+            } else if (customer.state === 'leaving') {
               customer.state = 'departed';
+              customer.order = null;
               model.visible = false;
             } else {
               customer.state = customer.queueIndex === 0 ? 'ordering' : 'queued';
@@ -440,16 +651,23 @@ export class CharacterSystem {
     });
   }
 
-  serveFrontCustomer(elapsed) {
-    const servedCustomer = this.customers.find((customer) => (
-      customer.queueIndex === 0 && customer.state === 'ordering'
-    ));
-    if (!servedCustomer) return false;
+  serveFrontCustomer(elapsed, order) {
+    const servedCustomer = this.getFrontCustomer();
+    if (!servedCustomer) return Object.freeze({ ok: false, reason: 'no-customer' });
 
+    const seat = this.diningSeats.find((candidate) => {
+      const table = this.getDiningTable(candidate.tableId);
+      return candidate.occupiedBy === null && table?.state === 'clean';
+    });
+    if (!seat) return Object.freeze({ ok: false, reason: 'no-seat' });
+
+    seat.occupiedBy = servedCustomer.definition.id;
     servedCustomer.queueIndex = -1;
-    servedCustomer.state = 'celebrating';
-    servedCustomer.stateUntil = elapsed + 0.8;
-    this.setAnimation(servedCustomer.definition.id, 'Celebrate', 0.1);
+    servedCustomer.state = 'paying';
+    servedCustomer.stateUntil = elapsed + 0.68;
+    servedCustomer.order = order ?? servedCustomer.order;
+    servedCustomer.seatId = seat.id;
+    this.setAnimation(servedCustomer.definition.id, 'Pay', 0.1);
 
     this.customers.forEach((customer) => {
       if (customer === servedCustomer || customer.state === 'departed' || customer.queueIndex <= 0) return;
@@ -469,7 +687,7 @@ export class CharacterSystem {
       this.setAnimation(customer.definition.id, 'Walk_Customer');
     });
 
-    return true;
+    return Object.freeze({ ok: true, customer: servedCustomer, seatId: seat.id });
   }
 
   setAnimation(characterId, animationName, transition = 0.16) {
