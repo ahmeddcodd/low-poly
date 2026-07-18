@@ -307,6 +307,7 @@ export class CharacterSystem {
     this.elapsed = 0;
     this.diningTables = DINING_TABLE_DEFINITIONS.map((definition) => ({
       ...definition,
+      unlocked: definition.id === 'compact-table',
       state: 'clean',
       garbageCount: 0,
     }));
@@ -314,6 +315,8 @@ export class CharacterSystem {
       ...definition,
       occupiedBy: null,
     }));
+    this.customerReturnsEnabled = true;
+    this.customerVisitCount = 0;
     this.playerMarker = createPlayerMarker();
     this.group.add(this.playerMarker);
   }
@@ -347,6 +350,9 @@ export class CharacterSystem {
       character.spawnAt = CUSTOMER_SPAWN_DELAY + queueIndex * CUSTOMER_SPAWN_INTERVAL;
       character.order = null;
       character.seatId = null;
+      character.departedAt = Infinity;
+      character.visitNumber = 1;
+      this.customerVisitCount += 1;
       character.mealUntil = 0;
       character.route = [
         CUSTOMER_ENTRY_INSIDE,
@@ -376,6 +382,28 @@ export class CharacterSystem {
     this.playerColliders = colliders;
   }
 
+  setUnlockedDiningTables(tableIds) {
+    const unlocked = new Set(tableIds);
+    this.diningTables.forEach((table) => {
+      table.unlocked = unlocked.has(table.id);
+    });
+  }
+
+  unlockDiningTable(tableId) {
+    const table = this.getDiningTable(tableId);
+    if (!table) return false;
+    table.unlocked = true;
+    return true;
+  }
+
+  get unlockedDiningTableIds() {
+    return this.diningTables.filter(({ unlocked }) => unlocked).map(({ id }) => id);
+  }
+
+  setCustomerReturnsEnabled(enabled) {
+    this.customerReturnsEnabled = Boolean(enabled);
+  }
+
   setPlayerCarrying(carrying) {
     this.playerCarrying = carrying;
     if (!this.player || this.elapsed < this.playerActionUntil) return;
@@ -393,7 +421,8 @@ export class CharacterSystem {
 
   _playerCollides(x, z) {
     return this.playerColliders.some((collider) => (
-      x >= collider.minX && x <= collider.maxX
+      collider.enabled !== false
+      && x >= collider.minX && x <= collider.maxX
       && z >= collider.minZ && z <= collider.maxZ
     ));
   }
@@ -405,13 +434,13 @@ export class CharacterSystem {
   get availableSeatCount() {
     return this.diningSeats.filter((seat) => {
       const table = this.diningTables.find(({ id }) => id === seat.tableId);
-      return seat.occupiedBy === null && table?.state === 'clean';
+      return seat.occupiedBy === null && table?.unlocked && table.state === 'clean';
     }).length;
   }
 
   get dirtyTableCount() {
     return this.diningTables.reduce((count, table) => (
-      count + (table.state === 'clean' ? 0 : 1)
+      count + (!table.unlocked || table.state === 'clean' ? 0 : 1)
     ), 0);
   }
 
@@ -433,7 +462,7 @@ export class CharacterSystem {
 
   canCleanTable(tableId) {
     const table = this.getDiningTable(tableId);
-    return table?.state === 'dirty' && this.isTableVacant(tableId);
+    return table?.unlocked && table.state === 'dirty' && this.isTableVacant(tableId);
   }
 
   beginTableCleanup(tableId) {
@@ -453,7 +482,7 @@ export class CharacterSystem {
 
   _markTableDirty(tableId) {
     const table = this.getDiningTable(tableId);
-    if (!table || table.state === 'garbage-carried') return;
+    if (!table?.unlocked || table.state === 'garbage-carried') return;
     table.state = 'dirty';
     table.garbageCount = Math.min(2, table.garbageCount + 1);
   }
@@ -531,7 +560,40 @@ export class CharacterSystem {
     this.playerMarker.position.z = model.position.z;
   }
 
+  _recycleDepartedCustomers(elapsed) {
+    if (!this.customerReturnsEnabled) return;
+    let nextQueueIndex = this.customers.filter(({ state }) => (
+      state === 'waiting-to-enter'
+      || state === 'walking'
+      || state === 'queued'
+      || state === 'ordering'
+    )).length;
+    if (nextQueueIndex >= CUSTOMER_QUEUE_SLOTS.length) return;
+
+    this.customers.forEach((customer) => {
+      if (customer.state !== 'departed' || elapsed - customer.departedAt < 2.2) return;
+      if (nextQueueIndex >= CUSTOMER_QUEUE_SLOTS.length) return;
+      customer.queueIndex = nextQueueIndex;
+      customer.state = 'waiting-to-enter';
+      customer.spawnAt = elapsed + 0.25 + nextQueueIndex * 0.08;
+      customer.order = null;
+      customer.seatId = null;
+      customer.mealUntil = 0;
+      customer.visitNumber += 1;
+      this.customerVisitCount += 1;
+      customer.route = [
+        CUSTOMER_ENTRY_INSIDE,
+        ...CUSTOMER_QUEUE_SLOTS.slice(nextQueueIndex).reverse(),
+      ];
+      customer.routeIndex = 0;
+      customer.model.position.x = CUSTOMER_ENTRY_POSITION[0];
+      customer.model.position.z = CUSTOMER_ENTRY_POSITION[1];
+      nextQueueIndex += 1;
+    });
+  }
+
   _updateCustomers(delta, elapsed) {
+    this._recycleDepartedCustomers(elapsed);
     this.customers.forEach((customer) => {
       const { model, definition } = customer;
       if (customer.state === 'paying') {
@@ -616,6 +678,7 @@ export class CharacterSystem {
             } else if (customer.state === 'leaving') {
               customer.state = 'departed';
               customer.order = null;
+              customer.departedAt = elapsed;
               model.visible = false;
             } else {
               customer.state = customer.queueIndex === 0 ? 'ordering' : 'queued';
@@ -657,7 +720,7 @@ export class CharacterSystem {
 
     const seat = this.diningSeats.find((candidate) => {
       const table = this.getDiningTable(candidate.tableId);
-      return candidate.occupiedBy === null && table?.state === 'clean';
+      return candidate.occupiedBy === null && table?.unlocked && table.state === 'clean';
     });
     if (!seat) return Object.freeze({ ok: false, reason: 'no-seat' });
 

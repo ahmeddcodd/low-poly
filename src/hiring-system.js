@@ -35,7 +35,7 @@ const UPGRADE_DEFINITIONS = Object.freeze([
     title: 'Player + profit',
     detail: 'Boosts player speed and doubles every payment',
     maxLevel: 1,
-    costs: Object.freeze([120]),
+    costs: Object.freeze([60]),
   }),
 ]);
 
@@ -375,6 +375,7 @@ export class HiringSystem {
         chair,
         employee,
         paid: 0,
+        available: true,
         hired: false,
         hiredAt: Infinity,
         paymentBudget: 0,
@@ -417,6 +418,14 @@ export class HiringSystem {
 
   get workerCount() {
     return this.upgrades.workers;
+  }
+
+  setHiringAvailable(managerId, available) {
+    const pad = this.pads.find(({ definition }) => definition.id === managerId);
+    if (!pad) return false;
+    pad.available = Boolean(available);
+    if (!pad.hired) pad.group.visible = pad.available;
+    return true;
   }
 
   get workerSpeedLevel() {
@@ -542,7 +551,12 @@ export class HiringSystem {
   }
 
   _updateHireReveal(pad, elapsed) {
+    if (!pad.hired && !pad.available) {
+      pad.group.visible = false;
+      return;
+    }
     if (!pad.hired) {
+      pad.group.visible = true;
       const pulse = 1 + Math.sin(elapsed * 4.5 + pad.definition.cost) * 0.035;
       pad.group.scale.setScalar(pulse);
       return;
@@ -619,7 +633,8 @@ export class HiringSystem {
     }
 
     const pad = this.pads.find((candidate) => (
-      !candidate.hired
+      candidate.available
+      && !candidate.hired
       && distanceSquaredXZ(playerPosition, candidate.definition.padPosition)
         <= PAYMENT_RADIUS * PAYMENT_RADIUS
     ));

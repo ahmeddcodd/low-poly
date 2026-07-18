@@ -25,6 +25,12 @@ const FURNITURE_LAYOUT = Object.freeze([
   Object.freeze({ id: 'coral-chair', asset: 'diningChairCoral', position: [-3.3, 0.02, 3.6], rotation: Math.PI / 2 }),
 ]);
 
+const DINING_FURNITURE_IDS = Object.freeze({
+  'compact-table': Object.freeze(['compact-table', 'mint-chair', 'coral-chair']),
+  'dining-set-north': Object.freeze(['dining-set-north']),
+  'dining-set-center': Object.freeze(['dining-set-center']),
+});
+
 const COLLISION_PROXY_PATTERN = /^COL_/;
 const COLLIDER_PADDING = WORLD_CONFIG.playerCollisionRadius;
 
@@ -63,19 +69,20 @@ function createFurnitureColliders(group, collisionMeshes) {
 
   const colliders = collisionMeshes.map(({ object, furnitureId }) => {
     bounds.setFromObject(object);
-    const collider = Object.freeze({
+    const collider = {
       name: object.name,
       furnitureId,
       minX: bounds.min.x - COLLIDER_PADDING,
+      enabled: true,
       maxX: bounds.max.x + COLLIDER_PADDING,
       minZ: bounds.min.z - COLLIDER_PADDING,
       maxZ: bounds.max.z + COLLIDER_PADDING,
-    });
+    };
     object.visible = false;
     return collider;
   });
 
-  return Object.freeze(colliders);
+  return colliders;
 }
 
 function disposeFurniture(group) {
@@ -129,10 +136,39 @@ export async function createIceCreamShop(onProgress) {
 
   const colliders = createFurnitureColliders(group, collisionMeshes);
 
+  const instancesById = new Map(instances.map((instance) => [instance.userData.furnitureId, instance]));
+  const unlockedDiningTables = new Set();
+  const setTableVisibility = (tableId, visible) => {
+    const furnitureIds = DINING_FURNITURE_IDS[tableId] ?? [];
+    furnitureIds.forEach((furnitureId) => {
+      const instance = instancesById.get(furnitureId);
+      if (instance) instance.visible = visible;
+      colliders.filter((collider) => collider.furnitureId === furnitureId)
+        .forEach((collider) => { collider.enabled = visible; });
+    });
+    if (visible) unlockedDiningTables.add(tableId);
+    else unlockedDiningTables.delete(tableId);
+    return furnitureIds.map((id) => instancesById.get(id)).filter(Boolean);
+  };
+  const setUnlockedDiningTables = (tableIds) => {
+    const nextUnlocked = new Set(tableIds);
+    Object.keys(DINING_FURNITURE_IDS).forEach((tableId) => {
+      setTableVisibility(tableId, nextUnlocked.has(tableId));
+    });
+  };
+  setUnlockedDiningTables(['compact-table']);
+
   return {
     group,
     instances: Object.freeze(instances),
     colliders,
+    get unlockedDiningTableIds() {
+      return [...unlockedDiningTables];
+    },
+    setUnlockedDiningTables,
+    unlockDiningTable(tableId) {
+      return setTableVisibility(tableId, true);
+    },
     dispose() {
       disposeFurniture(group);
     },

@@ -18,6 +18,10 @@ const cashValue = cashChip.querySelector('strong');
 const managerUpgrades = document.querySelector('#manager-upgrades');
 const managerUpgradeCards = [...managerUpgrades.querySelectorAll('[data-upgrade]')];
 const managerUpgradeRoomLabel = managerUpgrades.querySelector('.manager-upgrades__header > span');
+const storyProgress = document.querySelector('.build-status');
+const storyProgressFill = document.querySelector('#story-progress-fill');
+const storyProgressValue = document.querySelector('#story-progress-value');
+const storyProgressNext = document.querySelector('#story-progress-next');
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -50,6 +54,8 @@ let displayedCash = -1;
 let displayedUpgradeRevision = -1;
 let displayedUpgradeCash = -1;
 let displayedUpgradeRoomId = null;
+let displayedStoryPercent = -1;
+let displayedStoryTitle = '';
 const debugTelemetryEnabled = location.hostname === '127.0.0.1' && new URLSearchParams(location.search).has('debug');
 
 function addLights() {
@@ -119,6 +125,7 @@ function syncManagerUpgrades() {
   const hiringSystem = restaurantScene?.iceCreamProduction.hiringSystem;
   if (!hiringSystem) return;
   const roomId = hiringSystem.upgradeRoomId;
+  managerUpgrades.dataset.room = roomId ?? '';
   if (roomId !== displayedUpgradeRoomId) {
     displayedUpgradeRoomId = roomId;
     managerUpgrades.hidden = !roomId;
@@ -131,13 +138,16 @@ function syncManagerUpgrades() {
   displayedUpgradeRevision = hiringSystem.upgradeRevision;
   displayedUpgradeCash = hiringSystem.productionSystem.cash;
   managerUpgradeRoomLabel.textContent = roomId === 'wc-manager'
-    ? 'WC MANAGER OFFICE'
-    : 'GENERAL MANAGER OFFICE';
+    ? 'GENERAL MANAGER OFFICE'
+    : 'HR OFFICE';
 
   const cards = hiringSystem.getUpgradeCards();
   managerUpgradeCards.forEach((button) => {
     const card = cards.find(({ id }) => id === button.dataset.upgrade);
     if (!card) return;
+    const relevantToRoom = card.managerId === roomId;
+    button.hidden = !relevantToRoom;
+    if (!relevantToRoom) return;
     const price = button.querySelector('.manager-card__price');
     const levelDisplay = button.querySelector('.manager-card__levels');
     const pips = [...levelDisplay.querySelectorAll('i')];
@@ -155,8 +165,24 @@ function syncManagerUpgrades() {
     pips.forEach((pip, index) => pip.classList.toggle('is-active', index < card.level));
     price.textContent = card.maxed
       ? 'MAX'
-      : card.managerHired ? `$${card.cost}` : `HIRE ${card.managerId === 'wc-manager' ? 'WC' : 'GM'}`;
+      : card.managerHired ? `$${card.cost}` : `HIRE ${card.managerId === 'wc-manager' ? 'GM' : 'HR'}`;
   });
+}
+
+function syncStoryProgress() {
+  const progression = restaurantScene?.progressionSystem;
+  if (!progression) return;
+  const percent = progression.progressPercent;
+  const title = progression.nextTitle;
+  if (percent === displayedStoryPercent && title === displayedStoryTitle) return;
+  displayedStoryPercent = percent;
+  displayedStoryTitle = title;
+  storyProgressFill.style.width = `${percent}%`;
+  storyProgressValue.textContent = `${percent}%`;
+  storyProgressNext.textContent = title;
+  storyProgressNext.title = progression.nextDetail;
+  storyProgress.setAttribute('aria-label', `Shop story progress: ${percent}%. Next: ${title}`);
+  storyProgress.classList.toggle('is-complete', progression.complete);
 }
 
 function syncGameHud() {
@@ -234,6 +260,7 @@ function animate(timestamp) {
   restaurantScene?.update(delta, elapsed);
   syncGameHud();
   syncManagerUpgrades();
+  syncStoryProgress();
   if (debugTelemetryEnabled && characterSystem) {
     const teleportX = Number(canvas.dataset.teleportX);
     const teleportZ = Number(canvas.dataset.teleportZ);
@@ -282,6 +309,11 @@ function animate(timestamp) {
       .join('|') ?? '';
     canvas.dataset.workerAutomationCount = String(hiringSystem?.workerAutomation?.workerCount ?? 0);
     canvas.dataset.assignedServer = String(hiringSystem?.workerAutomation?.assignedServerIndex ?? '');
+    canvas.dataset.storyStage = restaurantScene.progressionSystem.activeStep?.id ?? 'complete';
+    canvas.dataset.storyProgress = String(restaurantScene.progressionSystem.progressPercent);
+    canvas.dataset.unlockedFlavors = restaurantScene.progressionSystem.unlockedFlavors.join(',');
+    canvas.dataset.unlockedTables = restaurantScene.progressionSystem.unlockedTables.join(',');
+    canvas.dataset.customerVisitCount = String(characterSystem.customerVisitCount);
     canvas.dataset.simulationTime = elapsed.toFixed(2);
     canvas.dataset.trashLid = restaurantScene.iceCreamProduction.tableCleanup?.lidState ?? 'closed';
     canvas.dataset.trashDisposal = restaurantScene.iceCreamProduction.tableCleanup?.disposal?.owner ?? '';
@@ -308,6 +340,7 @@ async function boot() {
     }
     bindInterface();
     syncGameHud();
+    syncStoryProgress();
     cameraController.follow(restaurantScene.characterSystem.player.model.position);
     cameraController.update(1 / 60);
     renderer.render(scene, camera);

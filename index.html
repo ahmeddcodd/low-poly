@@ -19,9 +19,13 @@
           </svg>
         </button>
 
-        <div class="build-status" aria-label="Ice cream shop status">
-          <span class="build-status__label">ICE CREAM</span>
-          <span class="build-status__value">OPEN</span>
+        <div class="build-status" aria-label="Shop story progress: 0%">
+          <span class="build-status__header">
+            <span class="build-status__label">SHOP PROGRESS</span>
+            <strong id="story-progress-value" class="build-status__value">0%</strong>
+          </span>
+          <span class="build-status__track" aria-hidden="true"><i id="story-progress-fill"></i></span>
+          <small id="story-progress-next" class="build-status__next">Serve 2 starter orders</small>
         </div>
 
         <div class="cash-chip" aria-label="Cash: 0">
@@ -65,7 +69,7 @@
               <strong>Player + profit</strong>
               <small>Faster player and double payments</small>
               <span class="manager-card__levels manager-card__levels--single" aria-label="Not purchased"><i></i></span>
-              <span class="manager-card__price">$120</span>
+              <span class="manager-card__price">$60</span>
             </button>
           </div>
         </section>

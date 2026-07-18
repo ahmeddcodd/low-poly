@@ -4,6 +4,7 @@ import { PLACEMENT_ZONES, WORLD_CONFIG } from './config.js';
 import { PlacementZones } from './placement-zones.js';
 import { createCharacterSystem } from './character-system.js';
 import { createIceCreamShop } from './ice-cream-shop.js';
+import { ShopProgressionSystem } from './progression-system.js';
 import { createIceCreamProduction } from './ice-cream-production.js';
 
 const MODEL_URL = new URL('../Untitled.glb', import.meta.url).href;
@@ -91,6 +92,10 @@ function applyLocalDebugStart(characterSystem) {
   const positions = {
     gym: [13.05, -3],
     wc: [13.05, 3],
+    north: [-6.5, 2.45],
+    chocolate: [-1.6, -4.72],
+    center: [-6.5, 5],
+    mint: [0.8, -4.72],
     trash: [7.2, 5.05],
   };
   const position = positions[start];
@@ -146,6 +151,13 @@ export async function createRestaurantScene(scene, onProgress) {
   const wallColliders = createWallColliders(restaurant);
   world.add(characterSystem.group);
   iceCreamProduction.bindCharacterSystem(characterSystem);
+  const progressionSystem = new ShopProgressionSystem(
+    iceCreamShop,
+    iceCreamProduction,
+    characterSystem,
+  );
+  world.add(progressionSystem.group);
+  iceCreamProduction.bindProgressionSystem(progressionSystem);
   applyLocalDebugStart(characterSystem);
   const playerColliders = Object.freeze([
     ...wallColliders,
@@ -169,6 +181,7 @@ export async function createRestaurantScene(scene, onProgress) {
     restaurant,
     iceCreamShop,
     iceCreamProduction,
+    progressionSystem,
     characterSystem,
     placementZones,
     wallColliders,
@@ -183,10 +196,16 @@ export async function createRestaurantScene(scene, onProgress) {
       characterSystem.update(delta, elapsed);
       iceCreamProduction.update(delta, elapsed);
       iceCreamProduction.updateHiring(delta, elapsed);
+      progressionSystem.update(
+        delta,
+        elapsed,
+        characterSystem.player.model.position,
+      );
       placementZones.update(elapsed);
     },
     dispose() {
       mixer?.stopAllAction();
+      progressionSystem.dispose();
       iceCreamProduction.dispose();
       iceCreamShop.dispose();
       characterSystem.dispose();

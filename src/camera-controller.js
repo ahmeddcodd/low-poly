@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { WORLD_CONFIG } from './config.js';
 
 const MIN_ZOOM = 0.58;
-const DEFAULT_ZOOM = 0.72;
+const DEFAULT_ZOOM = 0.66;
 const MAX_ZOOM = 1.72;
 
 export class IsometricCameraController {

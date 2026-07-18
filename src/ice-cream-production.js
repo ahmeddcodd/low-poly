@@ -42,7 +42,7 @@ const CASH_POINT = Object.freeze([6.05, 0.08, -0.05]);
 const INTERACTION_RADIUS = 0.82;
 const CASH_PICKUP_RADIUS = 1;
 const MAX_CASH_BILLS = 24;
-const FLAVOR_SEQUENCE = Object.freeze(['vanilla', 'strawberry', 'chocolate', 'mint']);
+const STORY_SERVICE_GOAL = 22;
 const ORDER_FLAVOR_COLORS = Object.freeze({
   vanilla: '#ffe7a0',
   strawberry: '#ff7690',
@@ -136,17 +136,18 @@ function createColliders(group, records) {
   const bounds = new THREE.Box3();
   group.updateMatrixWorld(true);
 
-  return Object.freeze(records.map(({ object, ownerId }) => {
+  return records.map(({ object, ownerId }) => {
     bounds.setFromObject(object);
-    return Object.freeze({
+    return {
       name: object.name,
       productionAssetId: ownerId,
+      enabled: true,
       minX: bounds.min.x - padding,
       maxX: bounds.max.x + padding,
       minZ: bounds.min.z - padding,
       maxZ: bounds.max.z + padding,
-    });
-  }));
+    };
+  });
 }
 
 function createInteractionMarker(position, color) {
@@ -452,6 +453,8 @@ export class IceCreamProductionSystem {
     this.lastCollectedAmount = 0;
     this.orderBubbles = new Map();
     this.customerProducts = new Map();
+    this.progressionSystem = null;
+    this.unlockedFlavors = new Set();
     this.tableCleanup = null;
     this.hiringSystem = null;
     this.interactionColliders = Object.freeze([]);
@@ -472,6 +475,7 @@ export class IceCreamProductionSystem {
     this.group.add(this.cashMarker);
     this._buildStations();
     this._buildCarryRig();
+    this.setUnlockedFlavors(['vanilla', 'strawberry']);
   }
 
   _buildStations() {
@@ -548,6 +552,41 @@ export class IceCreamProductionSystem {
     ]);
   }
 
+  bindProgressionSystem(progressionSystem) {
+    this.progressionSystem = progressionSystem;
+  }
+
+  get unlockedFlavorIds() {
+    return MACHINE_DEFINITIONS
+      .map(({ flavor }) => flavor)
+      .filter((flavor) => this.unlockedFlavors.has(flavor));
+  }
+
+  setUnlockedFlavors(flavorIds) {
+    this.unlockedFlavors = new Set(flavorIds);
+    this.machines.forEach((machine) => {
+      const unlocked = this.unlockedFlavors.has(machine.flavor);
+      machine.unlocked = unlocked;
+      machine.model.visible = unlocked;
+      this.colliders
+        .filter(({ productionAssetId }) => productionAssetId === `machine-${machine.flavor}`)
+        .forEach((collider) => { collider.enabled = unlocked; });
+      if (!unlocked) {
+        const marker = this.markers.get(`machine-${machine.flavor}`);
+        if (marker) marker.visible = false;
+      }
+    });
+  }
+
+  unlockFlavor(flavor) {
+    const machine = this.machines.find((candidate) => candidate.flavor === flavor);
+    if (!machine) return null;
+    const nextFlavors = new Set(this.unlockedFlavors);
+    nextFlavors.add(flavor);
+    this.setUnlockedFlavors(nextFlavors);
+    return machine.model;
+  }
+
   _setCarryProduct(productName) {
     this.carryProducts.forEach((product) => { product.visible = false; });
     const product = this.carryProducts.get(productName);
@@ -566,8 +605,9 @@ export class IceCreamProductionSystem {
   _showOrderBubble(customer, order) {
     const existing = this.orderBubbles.get(customer.definition.id);
     if (existing) {
-      existing.visible = true;
-      return;
+      existing.removeFromParent();
+      disposeObjectResources([existing]);
+      this.orderBubbles.delete(customer.definition.id);
     }
     const bubble = createOrderBubble(order);
     customer.model.add(bubble);
@@ -586,6 +626,8 @@ export class IceCreamProductionSystem {
     product.position.set(0, 1.24, 0.45);
     product.scale.setScalar(0.52);
     configureObject(product);
+    const previous = this.customerProducts.get(customer.definition.id);
+    if (previous) previous.product.removeFromParent();
     customer.model.add(product);
     this.customerProducts.set(customer.definition.id, { customer, product });
   }
@@ -732,7 +774,9 @@ export class IceCreamProductionSystem {
   }
 
   _startOrder() {
-    const flavor = FLAVOR_SEQUENCE[this.servedCount % FLAVOR_SEQUENCE.length];
+    const unlockedFlavors = this.unlockedFlavorIds;
+    if (unlockedFlavors.length === 0) return false;
+    const flavor = unlockedFlavors[this.servedCount % unlockedFlavors.length];
     const container = this.servedCount % 2 === 0 ? 'cone' : 'cup';
     const order = Object.freeze({ flavor, container });
     const customer = this.characterSystem.assignFrontCustomerOrder(order);
@@ -827,6 +871,7 @@ export class IceCreamProductionSystem {
 
   update(delta, elapsed) {
     this.machines.forEach((machine) => {
+      if (!machine.unlocked) return;
       machine.mixer.update(delta);
       if (machine.preview && machine.preview.visible && elapsed > machine.dispensingUntil) {
         machine.preview.visible = false;
@@ -842,7 +887,8 @@ export class IceCreamProductionSystem {
     if (this._handleTableCleanup(elapsed, playerPosition)) return;
 
     if (this.stage === 'waiting') {
-      if (this.servedCount >= this.characterSystem.customers.length) {
+      if (this.progressionSystem?.complete && this.servedCount >= STORY_SERVICE_GOAL) {
+        this.characterSystem.setCustomerReturnsEnabled(false);
         this._setTargetMarker(null);
         const allDeparted = this.characterSystem.customers.every(({ state }) => state === 'departed');
         if (allDeparted) {
