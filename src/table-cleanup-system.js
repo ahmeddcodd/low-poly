@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { WORLD_CONFIG } from './config.js';
 
 const TRASH_BIN_POSITION = Object.freeze([7.2, 0.02, 6.15]);
@@ -149,18 +150,18 @@ function createTrashBin() {
   const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x396b3c, roughness: 0.8 });
   const trimMaterial = new THREE.MeshStandardMaterial({ color: 0x24462b, roughness: 0.72 });
   const openingMaterial = new THREE.MeshStandardMaterial({ color: 0x172019, roughness: 0.95 });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.38, 1.05, 0.8), bodyMaterial);
+  const body = new THREE.Mesh(new RoundedBoxGeometry(1.38, 1.05, 0.8, 7, 0.08), bodyMaterial);
   body.position.y = 0.55;
-  const lowerTrim = new THREE.Mesh(new THREE.BoxGeometry(1.48, 0.15, 0.9), trimMaterial);
+  const lowerTrim = new THREE.Mesh(new RoundedBoxGeometry(1.48, 0.15, 0.9, 7, 0.05), trimMaterial);
   lowerTrim.position.y = 0.1;
   const lidPivot = new THREE.Group();
   lidPivot.name = 'Trash_Bin_Animated_Lid_Pivot';
   lidPivot.position.set(0, 1.12, 0.42);
   lidPivot.rotation.x = LID_CLOSED_ANGLE;
-  const lid = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.16, 0.9), trimMaterial);
+  const lid = new THREE.Mesh(new RoundedBoxGeometry(1.5, 0.16, 0.9, 7, 0.05), trimMaterial);
   lid.position.set(0, 0.04, -0.38);
   lidPivot.add(lid);
-  const opening = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.1, 0.3), openingMaterial);
+  const opening = new THREE.Mesh(new RoundedBoxGeometry(1.05, 0.1, 0.3, 7, 0.04), openingMaterial);
   opening.position.set(0, 1.1, -0.34);
   const label = new THREE.Mesh(new THREE.PlaneGeometry(1.02, 0.34), createTrashLabelMaterial());
   label.name = 'Trash_Bin_Label';
@@ -228,7 +229,7 @@ export class TableCleanupSystem {
 
     const carryCluster = createGarbageCluster(this.garbageKit, 'Player_Carried_Garbage');
     this.carryRig = carryCluster.group;
-    this.carryRig.position.set(0, 1.18, 0.48);
+    this.carryRig.position.set(0, 1.0, 0.48);
     this.carryRig.scale.setScalar(0.78);
     this.carryRig.visible = false;
     characterSystem.player.model.add(this.carryRig);
@@ -255,7 +256,7 @@ export class TableCleanupSystem {
     let rig = this.workerCarryRigs.get(workerModel);
     if (rig) return rig;
     rig = createGarbageCluster(this.garbageKit, `${workerModel.name}_Carried_Garbage`).group;
-    rig.position.set(0, 1.18, 0.48);
+    rig.position.set(0, 1.0, 0.48);
     rig.scale.setScalar(0.78);
     rig.visible = false;
     workerModel.add(rig);
@@ -278,7 +279,7 @@ export class TableCleanupSystem {
 
     actorModel.updateMatrixWorld(true);
     actorModel.getWorldPosition(this.scratchStart);
-    this.scratchStart.y += 1.12;
+    this.scratchStart.y += 0.88;
     this.scratchStart.z += 0.16;
     carryRig.visible = false;
     this.dropRig.position.copy(this.scratchStart);

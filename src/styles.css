@@ -288,37 +288,6 @@ button { font: inherit; }
   font-weight: 700;
 }
 
-.guide-button {
-  position: absolute;
-  bottom: calc(18px + env(safe-area-inset-bottom));
-  left: calc(18px + env(safe-area-inset-left));
-  display: flex;
-  min-height: 46px;
-  padding: 0 16px;
-  gap: 9px;
-  align-items: center;
-  color: #28322b;
-  background: rgba(255, 255, 244, 0.92);
-  border: 3px solid rgba(255, 255, 255, 0.9);
-  border-radius: 15px;
-  box-shadow: 0 4px 0 rgba(50, 70, 47, 0.2), 0 7px 18px rgba(28, 53, 24, 0.15);
-}
-
-.guide-button__dot {
-  width: 13px;
-  height: 13px;
-  background: #4be43a;
-  border: 2px solid #208f22;
-  border-radius: 50%;
-  box-shadow: 0 0 0 4px rgba(75, 228, 58, 0.2);
-}
-
-.guide-button[aria-pressed="false"] .guide-button__dot {
-  background: #9aa39c;
-  border-color: #69736b;
-  box-shadow: none;
-}
-
 .controls-hint {
   position: absolute;
   bottom: calc(21px + env(safe-area-inset-bottom));
@@ -685,14 +654,6 @@ button { font: inherit; }
   .manager-card__levels { gap: 2px; }
   .manager-card__levels i { width: 12px; }
   .manager-card__price { padding: 4px 6px; font-size: 10px; }
-
-  .guide-button {
-    bottom: calc(12px + env(safe-area-inset-bottom));
-    left: calc(12px + env(safe-area-inset-left));
-    min-height: 42px;
-    padding: 0 13px;
-    font-size: 13px;
-  }
 
   .controls-hint {
     right: calc(12px + env(safe-area-inset-right));

@@ -71,6 +71,13 @@ const PRODUCT_NAMES = Object.freeze({
   chocolate: Object.freeze({ cone: 'Product_Chocolate_Cone', cup: 'Product_Chocolate_Cup' }),
   mint: Object.freeze({ cone: 'Product_Mint_Cone', cup: 'Product_Mint_Cup' }),
 });
+const CUSTOMER_PRODUCT_SCALE = 0.31;
+const CUSTOMER_PRODUCT_DINING_INSET = 0.035;
+const CUSTOMER_PRODUCT_GRIP_OFFSET = Object.freeze({
+  cone: -0.075,
+  cup: -0.055,
+});
+
 
 function configureMaterial(material) {
   material.roughness = Math.max(material.roughness ?? 0.72, 0.62);
@@ -150,34 +157,60 @@ function createColliders(group, records) {
   });
 }
 
-function createInteractionMarker(position, color) {
+function createInteractionMarker(position, color, { radius = 0.55, floatingArrow = false } = {}) {
   const group = new THREE.Group();
-  group.position.set(position.x, 0.075, position.z);
+  group.position.set(position.x, Math.max(position.y ?? 0, 0) + 0.09, position.z);
   group.visible = false;
 
   const disc = new THREE.Mesh(
-    new THREE.CircleGeometry(0.55, 24),
+    new THREE.CircleGeometry(radius, 32),
     new THREE.MeshBasicMaterial({
       color,
       transparent: true,
-      opacity: 0.22,
+      opacity: 0.3,
+      depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide,
     }),
   );
   const ring = new THREE.Mesh(
-    new THREE.RingGeometry(0.5, 0.62, 24),
+    new THREE.RingGeometry(radius - 0.06, radius + 0.1, 32),
     new THREE.MeshBasicMaterial({
       color,
       transparent: true,
-      opacity: 0.9,
+      opacity: 1,
+      depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide,
     }),
   );
   disc.rotation.x = -Math.PI / 2;
   ring.rotation.x = -Math.PI / 2;
+  disc.renderOrder = 40;
+  ring.renderOrder = 41;
   group.add(disc, ring);
+
+  if (floatingArrow) {
+    const arrow = new THREE.Group();
+    const arrowMaterial = new THREE.MeshBasicMaterial({
+      color,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.5, 4), arrowMaterial);
+    const stem = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.42, 0.18), arrowMaterial);
+    tip.rotation.z = Math.PI;
+    stem.position.y = 0.38;
+    tip.renderOrder = 42;
+    stem.renderOrder = 42;
+    arrow.position.y = 1.35;
+    arrow.userData.baseY = arrow.position.y;
+    arrow.add(tip, stem);
+    group.userData.floatingArrow = arrow;
+    group.add(arrow);
+  }
+
   return group;
 }
 
@@ -319,8 +352,8 @@ function createOrderBubble(order) {
   });
   const sprite = new THREE.Sprite(material);
   sprite.name = `Order_Bubble_${order.flavor}_${order.container}`;
-  sprite.position.set(0, 3.35, 0);
-  sprite.scale.set(3, 1.44, 1);
+  sprite.position.set(0, 2.75, 0);
+  sprite.scale.set(2.55, 1.22, 1);
   sprite.renderOrder = 80;
   return sprite;
 }
@@ -430,7 +463,7 @@ export class IceCreamProductionSystem {
     this.characterSystem = null;
     this.carryRig = new THREE.Group();
     this.carryRig.name = 'Worker_IceCream_Tray';
-    this.carryRig.position.set(0, 1.23, 0.48);
+    this.carryRig.position.set(0, 1.04, 0.48);
     this.carryRig.visible = false;
     this.carryProducts = new Map();
     this.activeCarryProduct = null;
@@ -453,6 +486,8 @@ export class IceCreamProductionSystem {
     this.lastCollectedAmount = 0;
     this.orderBubbles = new Map();
     this.customerProducts = new Map();
+    this.customerGripWorldQuaternion = new THREE.Quaternion();
+    this.customerModelWorldQuaternion = new THREE.Quaternion();
     this.progressionSystem = null;
     this.unlockedFlavors = new Set();
     this.tableCleanup = null;
@@ -486,7 +521,10 @@ export class IceCreamProductionSystem {
       if (!anchor) throw new Error(`Missing StaffStandPoint on ${machine.flavor} machine`);
       anchor.getWorldPosition(machine.standPoint);
       const markerId = `machine-${machine.flavor}`;
-      const marker = createInteractionMarker(machine.standPoint, machine.color);
+      const marker = createInteractionMarker(machine.standPoint, 0x46ef3f, {
+        radius: 0.7,
+        floatingArrow: true,
+      });
       this.markers.set(markerId, marker);
       this.group.add(marker);
     });
@@ -622,28 +660,41 @@ export class IceCreamProductionSystem {
   _showCustomerProduct(customer, order) {
     const productName = PRODUCT_NAMES[order.flavor][order.container];
     const product = cloneAsset(this.productsScene, productName);
+    const gripBone = customer.model.getObjectByName('RightHandProp');
+    if (!gripBone) throw new Error(`Missing right-hand prop socket for ${customer.definition.id}`);
+
+    const gripPivot = new THREE.Group();
+    gripPivot.name = `Customer_Meal_Grip_${customer.definition.id}`;
     product.name = `Customer_Meal_${customer.definition.id}`;
-    product.position.set(0, 1.24, 0.45);
-    product.scale.setScalar(0.52);
+    product.position.set(0, CUSTOMER_PRODUCT_GRIP_OFFSET[order.container], 0);
+    product.quaternion.identity();
+    product.scale.setScalar(CUSTOMER_PRODUCT_SCALE);
+    product.userData.customerGripAttached = true;
     configureObject(product);
     const previous = this.customerProducts.get(customer.definition.id);
-    if (previous) previous.product.removeFromParent();
-    customer.model.add(product);
-    this.customerProducts.set(customer.definition.id, { customer, product });
+    if (previous) previous.gripPivot.removeFromParent();
+    gripBone.add(gripPivot);
+    gripPivot.add(product);
+    this.customerProducts.set(customer.definition.id, {
+      customer, product, gripBone, gripPivot,
+    });
+    this._syncCustomerDiningVisuals();
   }
 
   _syncCustomerDiningVisuals() {
-    this.customerProducts.forEach(({ customer, product }) => {
+    this.customerProducts.forEach(({ customer, product, gripBone, gripPivot }) => {
       const mealVisible = customer.state === 'paying'
         || customer.state === 'walking-to-seat'
         || customer.state === 'seated'
         || customer.state === 'eating';
+      const dining = customer.state === 'seated' || customer.state === 'eating';
       product.visible = mealVisible;
-      if (customer.state === 'seated' || customer.state === 'eating') {
-        product.position.set(0, 1.02, 0.42);
-      } else {
-        product.position.set(0, 1.24, 0.45);
-      }
+      product.position.x = dining ? CUSTOMER_PRODUCT_DINING_INSET : 0;
+      customer.model.getWorldQuaternion(this.customerModelWorldQuaternion);
+      gripBone.getWorldQuaternion(this.customerGripWorldQuaternion);
+      gripPivot.quaternion.copy(this.customerGripWorldQuaternion)
+        .invert()
+        .multiply(this.customerModelWorldQuaternion);
     });
   }
 
@@ -863,6 +914,11 @@ export class IceCreamProductionSystem {
     if (marker) {
       const pulse = 1 + Math.sin(elapsed * 4.4) * 0.08;
       marker.scale.setScalar(pulse);
+      const arrow = marker.userData.floatingArrow;
+      if (arrow) {
+        arrow.position.y = arrow.userData.baseY + Math.sin(elapsed * 5.2) * 0.1;
+        arrow.rotation.y = elapsed * 1.35;
+      }
     }
     if (this.cashMarker.visible) {
       this.cashMarker.scale.setScalar(1 + Math.sin(elapsed * 4.8) * 0.1);
@@ -1040,7 +1096,7 @@ export class IceCreamProductionSystem {
     this.hiringSystem?.dispose();
     const detachedVisuals = [
       ...this.orderBubbles.values(),
-      ...[...this.customerProducts.values()].map(({ product }) => product),
+      ...[...this.customerProducts.values()].map(({ gripPivot }) => gripPivot),
     ];
     detachedVisuals.forEach((visual) => visual.removeFromParent());
     this.carryRig.removeFromParent();

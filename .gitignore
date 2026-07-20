@@ -5,3 +5,6 @@ dist/
 .agents/
 artifacts/
 *.log
+__pycache__/
+*.pyc
+Creative_Characters_Free_glb/Separate_assets_glb.zip

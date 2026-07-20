@@ -10,7 +10,6 @@ const loadingFill = document.querySelector('#loading-fill');
 const loadingValue = document.querySelector('#loading-value');
 const errorPanel = document.querySelector('#error-panel');
 const resetButton = document.querySelector('#reset-view');
-const guideButton = document.querySelector('#toggle-guides');
 const objective = document.querySelector('#objective');
 const movementStick = document.querySelector('#movement-stick');
 const cashChip = document.querySelector('.cash-chip');
@@ -40,15 +39,12 @@ scene.background = new THREE.Color(0x8bd653);
 scene.fog = new THREE.Fog(0x8bd653, 42, 78);
 
 const camera = new THREE.OrthographicCamera(-20, 20, 20, -20, 0.1, 120);
-const cameraController = new IsometricCameraController(camera, canvas);
+const cameraController = new IsometricCameraController(camera);
 const playerController = new PlayerController(canvas, movementStick);
 const timer = new THREE.Timer();
 timer.connect(document);
-const raycaster = new THREE.Raycaster();
-const pointerNdc = new THREE.Vector2();
 let restaurantScene = null;
 let running = true;
-let tapStart = null;
 let displayedStatusRevision = -1;
 let displayedCash = -1;
 let displayedUpgradeRevision = -1;
@@ -90,35 +86,6 @@ function resize() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
   renderer.setSize(width, height, false);
   cameraController.resize(width, height);
-}
-
-function findPlacementDefinition(object) {
-  let current = object;
-  while (current) {
-    if (current.userData?.placementZone) return current.userData.placementZone;
-    current = current.parent;
-  }
-  return null;
-}
-
-function selectPlacementAt(clientX, clientY) {
-  if (!restaurantScene?.placementZones.visible) return;
-
-  const rect = canvas.getBoundingClientRect();
-  pointerNdc.set(
-    ((clientX - rect.left) / rect.width) * 2 - 1,
-    -((clientY - rect.top) / rect.height) * 2 + 1,
-  );
-  raycaster.setFromCamera(pointerNdc, camera);
-  const [intersection] = raycaster.intersectObjects(restaurantScene.placementZones.interactables, false);
-  const definition = intersection ? findPlacementDefinition(intersection.object) : null;
-  if (!definition) return;
-
-  restaurantScene.placementZones.setSelected(definition.id);
-  objective.querySelector('strong').textContent = definition.label;
-  objective.querySelector('span').textContent = definition.hint;
-  objective.classList.remove('is-selected');
-  requestAnimationFrame(() => objective.classList.add('is-selected'));
 }
 
 function syncManagerUpgrades() {
@@ -195,8 +162,7 @@ function syncGameHud() {
     cashChip.setAttribute('aria-label', `Cash: ${production.cash}`);
   }
 
-  if (restaurantScene.placementZones.visible
-    || production.statusRevision === displayedStatusRevision) return;
+  if (production.statusRevision === displayedStatusRevision) return;
   displayedStatusRevision = production.statusRevision;
   objective.querySelector('strong').textContent = production.status.title;
   objective.querySelector('span').textContent = production.status.detail;
@@ -210,29 +176,6 @@ function bindInterface() {
     const playerPosition = restaurantScene?.characterSystem.player?.model.position;
     cameraController.reset(playerPosition);
   });
-  guideButton.addEventListener('click', () => {
-    const nextVisible = !restaurantScene.placementZones.visible;
-    restaurantScene.placementZones.setVisible(nextVisible);
-    guideButton.setAttribute('aria-pressed', String(nextVisible));
-    objective.querySelector('strong').textContent = nextVisible ? 'Ice cream shop layout' : 'Serve ice cream customers';
-    objective.querySelector('span').textContent = nextVisible
-      ? 'Tap a green marker to inspect future expansion areas'
-      : restaurantScene.iceCreamProduction.status.detail;
-    objective.classList.remove('is-selected');
-    if (!nextVisible) displayedStatusRevision = -1;
-  });
-
-  canvas.addEventListener('pointerdown', (event) => {
-    tapStart = { id: event.pointerId, x: event.clientX, y: event.clientY, time: performance.now() };
-  });
-  canvas.addEventListener('pointerup', (event) => {
-    if (!tapStart || tapStart.id !== event.pointerId) return;
-    const distance = Math.hypot(event.clientX - tapStart.x, event.clientY - tapStart.y);
-    const duration = performance.now() - tapStart.time;
-    if (distance < 9 && duration < 500) selectPlacementAt(event.clientX, event.clientY);
-    tapStart = null;
-  });
-  canvas.addEventListener('pointercancel', () => { tapStart = null; });
 
   managerUpgradeCards.forEach((button) => {
     button.addEventListener('click', () => {
@@ -272,6 +215,8 @@ function animate(timestamp) {
     }
     canvas.dataset.playerX = characterSystem.player.model.position.x.toFixed(3);
     canvas.dataset.playerZ = characterSystem.player.model.position.z.toFixed(3);
+    canvas.dataset.playerColliding = String(characterSystem.playerIsColliding);
+    canvas.dataset.playerCollisionRecoveries = String(characterSystem.playerCollisionRecoveries);
     canvas.dataset.productionStage = restaurantScene.iceCreamProduction.stage;
     canvas.dataset.carriedProduct = restaurantScene.iceCreamProduction.activeCarryProduct ?? '';
     canvas.dataset.collectedCash = String(restaurantScene.iceCreamProduction.cash);
@@ -353,7 +298,6 @@ async function boot() {
       player: restaurantScene.characterSystem.player?.definition.id,
       customers: restaurantScene.characterSystem.customers.length,
       customerFlow: 'entrance -> order counter queue',
-      placementSlots: restaurantScene.placementZones.zones.length,
       wallColliders: restaurantScene.wallColliders.length,
       furniture: restaurantScene.iceCreamShop.instances.length,
       furnitureColliders: restaurantScene.furnitureColliders.length,

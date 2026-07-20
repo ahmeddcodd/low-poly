@@ -42,6 +42,18 @@ pnpm dlx vercel --prod
 
 No environment variables or server functions are required. Vercel installs from `pnpm-lock.yaml`, runs `pnpm run build:vercel`, and serves the generated `dist` directory.
 
+## Character art pipeline
+
+The playable cast uses the individual GLBs in `character_exports_v2`. The Blender 5.2+ pipeline preserves every gameplay clip while rebuilding the shared rest skeleton and skinned meshes into a short, rounded, completely faceless hyper-casual style.
+
+```bash
+blender --background --python scripts/stylize_faceless_characters_blender.py -- --input-dir character_exports_v2 --output-dir character_exports_v2
+blender --background --python scripts/validate_character_glbs.py -- --input-dir character_exports_v2
+```
+
+The conversion is versioned in glTF extras, so rerunning it will not compact an already converted rig a second time. It also removes every `CHR_Face_*` mesh to keep the heads blank. Use `render_character_preview.py` for an isolated visual check and `audit_character_glb.py` for detailed rig/action inspection.
+
+
 ## Extension points
 
 - Add authored placement definitions in `src/config.js`.

@@ -1,9 +1,9 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { WORLD_CONFIG } from './config.js';
 
 import { WorkerAutomationSystem } from './worker-automation-system.js';
-const GLASSES_CHARACTER_ID = 'elderly-male';
 const PAYMENT_RATE = 34;
 const PAYMENT_RADIUS = 0.9;
 const CASH_PER_FLIGHT = 4;
@@ -141,11 +141,11 @@ function createHirePad(definition) {
   group.position.set(...definition.padPosition);
 
   const rim = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.04, 1.04, 0.12, 8),
+    new THREE.CylinderGeometry(1.04, 1.04, 0.12, 64, 40),
     new THREE.MeshStandardMaterial({ color: 0xf8fff1, roughness: 0.72 }),
   );
   const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.91, 0.91, 0.16, 8),
+    new THREE.CylinderGeometry(0.91, 0.91, 0.16, 64, 40),
     new THREE.MeshStandardMaterial({ color: 0x555a50, roughness: 0.82 }),
   );
   rim.rotation.y = Math.PI / 8;
@@ -182,12 +182,12 @@ function createChair(definition) {
     roughness: 0.8,
   });
   const legMaterial = new THREE.MeshStandardMaterial({ color: 0x567a70, roughness: 0.67 });
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.12, 0.42), seatMaterial);
+  const seat = new THREE.Mesh(new RoundedBoxGeometry(0.82, 0.12, 0.42, 7, 0.045), seatMaterial);
   seat.position.set(0, 0.41, -0.16);
-  const back = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.74, 0.12), seatMaterial);
+  const back = new THREE.Mesh(new RoundedBoxGeometry(0.82, 0.74, 0.12, 6, 0.045), seatMaterial);
   back.position.set(0, 0.78, -0.43);
 
-  const legGeometry = new THREE.BoxGeometry(0.12, 0.41, 0.12);
+  const legGeometry = new RoundedBoxGeometry(0.12, 0.41, 0.12, 5, 0.025);
   [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0], [0.3, 0]].forEach(([x, z]) => {
     const leg = new THREE.Mesh(legGeometry, legMaterial);
     leg.position.set(x, 0.205, z);
@@ -357,9 +357,7 @@ export class HiringSystem {
     this.upgradeMessageUntil = 0;
     this.lastElapsed = 0;
 
-    const glassesCharacter = characterSystem.characters.find(
-      ({ definition }) => definition.id === GLASSES_CHARACTER_ID,
-    );
+    const glassesCharacter = characterSystem.managerSource;
     if (!glassesCharacter) throw new Error('The glasses-wearing employee source is missing');
     const playerCharacter = characterSystem.player;
     if (!playerCharacter) throw new Error('The player worker source is missing');

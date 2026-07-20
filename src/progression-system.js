@@ -356,6 +356,7 @@ export class ShopProgressionSystem {
       const machine = this.productionSystem.unlockFlavor(step.unlockId);
       this._queueReveal(machine ? [machine] : [], elapsed);
     }
+    this.characterSystem.resolvePlayerCollisionOverlap();
     this.characterSystem.playPlayerAction('Celebrate', 0.7);
   }
 

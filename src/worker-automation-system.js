@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 
 const BASE_WORKER_SPEED = 1.55;
@@ -24,13 +25,13 @@ function targetRotation(deltaX, deltaZ) {
 function createServiceTray() {
   const group = new THREE.Group();
   group.name = 'Employee_Service_Tray';
-  group.position.set(0, 1.22, 0.48);
+  group.position.set(0, 1.04, 0.48);
   group.visible = false;
 
   const trayMaterial = new THREE.MeshStandardMaterial({ color: 0xe7f1ea, roughness: 0.68 });
   const coneMaterial = new THREE.MeshStandardMaterial({ color: 0xe4a95e, roughness: 0.76 });
   const scoopMaterial = new THREE.MeshStandardMaterial({ color: 0xffe7a0, roughness: 0.72 });
-  const tray = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.07, 0.48), trayMaterial);
+  const tray = new THREE.Mesh(new RoundedBoxGeometry(0.72, 0.07, 0.48, 14, 0.028), trayMaterial);
   const cone = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.34, 8), coneMaterial);
   const scoop = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 7), scoopMaterial);
   tray.position.y = 0.02;

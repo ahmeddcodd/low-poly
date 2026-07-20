@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { PLACEMENT_ZONES, WORLD_CONFIG } from './config.js';
-import { PlacementZones } from './placement-zones.js';
+import { WORLD_CONFIG } from './config.js';
 import { createCharacterSystem } from './character-system.js';
 import { createIceCreamShop } from './ice-cream-shop.js';
 import { ShopProgressionSystem } from './progression-system.js';
@@ -166,10 +165,6 @@ export async function createRestaurantScene(scene, onProgress) {
     ...iceCreamProduction.interactionColliders,
   ]);
   characterSystem.setPlayerColliders(playerColliders);
-
-  const placementZones = new PlacementZones(PLACEMENT_ZONES);
-  world.add(placementZones.group);
-
   const mixer = startEntranceAnimation(restaurant, gltf.animations);
   const bounds = new THREE.Box3().setFromObject(restaurant);
   const size = bounds.getSize(new THREE.Vector3());
@@ -183,7 +178,6 @@ export async function createRestaurantScene(scene, onProgress) {
     iceCreamProduction,
     progressionSystem,
     characterSystem,
-    placementZones,
     wallColliders,
     furnitureColliders: iceCreamShop.colliders,
     productionColliders: iceCreamProduction.colliders,
@@ -201,7 +195,6 @@ export async function createRestaurantScene(scene, onProgress) {
         elapsed,
         characterSystem.player.model.position,
       );
-      placementZones.update(elapsed);
     },
     dispose() {
       mixer?.stopAllAction();
@@ -209,7 +202,6 @@ export async function createRestaurantScene(scene, onProgress) {
       iceCreamProduction.dispose();
       iceCreamShop.dispose();
       characterSystem.dispose();
-      placementZones.dispose();
     },
   };
 }

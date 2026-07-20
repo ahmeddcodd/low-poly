@@ -1,8 +1,16 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { WORLD_CONFIG } from './config.js';
+import {
+  findNearestClearPoint,
+  pointCollides,
+} from './collision-recovery.js';
 
-const CHARACTER_SCALE = 0.72;
+const CHARACTER_SCALE = 0.85;
+const CREATIVE_CUSTOMER_LIBRARY_URL = new URL('../Creative_Characters_Free_glb/creative_customers_animated.glb', import.meta.url).href;
+const MANAGER_SOURCE_URL = new URL('../character_exports_v2/character_Elderly_Male.glb', import.meta.url).href;
+const CREATIVE_CUSTOMER_SCALE = 0.76;
 const FLOOR_Y = 0.065;
 const ROLE_ANIMATIONS = Object.freeze({
   player: Object.freeze([
@@ -18,6 +26,8 @@ const ROLE_ANIMATIONS = Object.freeze({
     'Idle',
     'Walk_Customer',
     'Sit',
+    'Carry_Walk_Customer',
+    'Receive_Order',
     'Eat',
     'Pay',
     'Angry',
@@ -29,8 +39,8 @@ const LOOPING_ANIMATIONS = new Set([
   'Walk_Player',
   'Walk_Customer',
   'Carry_Idle',
+  'Carry_Walk_Customer',
   'Carry_Walk',
-  'Sit',
   'Eat',
 ]);
 const PLAYER_SPEED = 4.25;
@@ -38,6 +48,13 @@ const CUSTOMER_SPEED = 1.75;
 const CUSTOMER_SPAWN_DELAY = 0.35;
 const CUSTOMER_SPAWN_INTERVAL = 1.1;
 const CUSTOMER_EATING_DURATION = 7.2;
+const PLAYER_OUTFIT_COLORS = Object.freeze({
+  T_Shirt_009: 0xfff4dc,
+  Pants_010: 0x242229,
+  Shoe_Sneakers_009: 0x19171a,
+});
+const SEATED_FORWARD_OFFSET = 0.12;
+const SEATED_SETTLE_SPEED = 12;
 const CUSTOMER_ENTRY_POSITION = Object.freeze([-2.5, 8.15]);
 const CUSTOMER_ENTRY_INSIDE = Object.freeze([-2.5, 6.72]);
 const PLAYER_START_POSITION = Object.freeze([0, -2.5]);
@@ -122,12 +139,31 @@ function dampAngle(current, target, delta, speed = 14) {
 function targetRotation(deltaX, deltaZ) {
   return Math.atan2(deltaX, deltaZ);
 }
+function settleCustomerIntoSeat(model, seat, delta) {
+  const deltaX = seat.face[0] - seat.position[0];
+  const deltaZ = seat.face[1] - seat.position[1];
+  const inverseDistance = 1 / Math.max(Math.hypot(deltaX, deltaZ), 0.001);
+  const targetX = seat.position[0] + deltaX * inverseDistance * SEATED_FORWARD_OFFSET;
+  const targetZ = seat.position[1] + deltaZ * inverseDistance * SEATED_FORWARD_OFFSET;
+  const blend = 1 - Math.exp(-SEATED_SETTLE_SPEED * Math.min(delta, 0.05));
+
+  model.position.x += (targetX - model.position.x) * blend;
+  model.position.z += (targetZ - model.position.z) * blend;
+  model.rotation.y = dampAngle(
+    model.rotation.y,
+    targetRotation(seat.face[0] - model.position.x, seat.face[1] - model.position.z),
+    delta,
+    10,
+  );
+}
+
 
 const CHARACTER_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: 'player-worker',
     role: 'player',
-    url: new URL('../character_exports_v2/character_Player_Worker.glb', import.meta.url).href,
+    parts: Object.freeze(['Body_010', 'T_Shirt_009', 'Pants_010', 'Shoe_Sneakers_009', 'Player_Apron', 'Player_Cap']),
+    scale: CREATIVE_CUSTOMER_SCALE,
     position: PLAYER_START_POSITION,
     faces: ORDER_COUNTER_POINT,
     animation: 'Idle',
@@ -135,7 +171,8 @@ const CHARACTER_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: 'police-officer',
     role: 'customer',
-    url: new URL('../character_exports_v2/character_Police_Officer.glb', import.meta.url).href,
+    parts: Object.freeze(['Body_010', 'T_Shirt_009', 'Pants_010', 'Shoe_Sneakers_009', 'Hairstyle_male_010']),
+    scale: CREATIVE_CUSTOMER_SCALE,
     position: Object.freeze([1.55, 0.55]),
     faces: Object.freeze([-0.6, -0.75]),
     animation: 'Idle',
@@ -143,7 +180,8 @@ const CHARACTER_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: 'casual-female',
     role: 'customer',
-    url: new URL('../character_exports_v2/character_Casual_Female.glb', import.meta.url).href,
+    parts: Object.freeze(['Body_010', 'Outerwear_029', 'Pants_014', 'Shoe_Sneakers_009', 'Hairstyle_male_012', 'Glasses_004']),
+    scale: CREATIVE_CUSTOMER_SCALE,
     position: Object.freeze([2.55, 1.45]),
     faces: Object.freeze([1.55, 0.55]),
     animation: 'Idle',
@@ -151,7 +189,8 @@ const CHARACTER_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: 'business-man',
     role: 'customer',
-    url: new URL('../character_exports_v2/character_Business_Man.glb', import.meta.url).href,
+    parts: Object.freeze(['Body_010', 'T_Shirt_009', 'Shorts_003', 'Socks_008', 'Shoe_Sneakers_009', 'Hat_010']),
+    scale: CREATIVE_CUSTOMER_SCALE,
     position: Object.freeze([3.55, 2.35]),
     faces: Object.freeze([2.55, 1.45]),
     animation: 'Idle',
@@ -159,7 +198,8 @@ const CHARACTER_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: 'cowboy-farmer',
     role: 'customer',
-    url: new URL('../character_exports_v2/character_Cowboy_Farmer.glb', import.meta.url).href,
+    parts: Object.freeze(['Body_010', 'Outerwear_036', 'Pants_010', 'Shoe_Sneakers_009', 'Hat_057', 'Gloves_014']),
+    scale: CREATIVE_CUSTOMER_SCALE,
     position: Object.freeze([4.55, 3.3]),
     faces: Object.freeze([3.55, 2.35]),
     animation: 'Idle',
@@ -167,7 +207,8 @@ const CHARACTER_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: 'elderly-female',
     role: 'customer',
-    url: new URL('../character_exports_v2/character_Elderly_Female.glb', import.meta.url).href,
+    parts: Object.freeze(['Body_010', 'T_Shirt_009', 'Pants_014', 'Shoe_Sneakers_009', 'Hairstyle_male_012', 'Headphones_002']),
+    scale: CREATIVE_CUSTOMER_SCALE,
     position: Object.freeze([4.75, 4.55]),
     faces: Object.freeze([4.55, 3.3]),
     animation: 'Idle',
@@ -175,7 +216,8 @@ const CHARACTER_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: 'elderly-male',
     role: 'customer',
-    url: new URL('../character_exports_v2/character_Elderly_Male.glb', import.meta.url).href,
+    parts: Object.freeze(['Body_010', 'Costume_10_001', 'Hat_049', 'Moustache_001', 'Gloves_006']),
+    scale: CREATIVE_CUSTOMER_SCALE,
     position: Object.freeze([3.75, 5.35]),
     faces: Object.freeze([4.75, 4.55]),
     animation: 'Idle',
@@ -183,7 +225,8 @@ const CHARACTER_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: 'casual-male',
     role: 'customer',
-    url: new URL('../character_exports_v2/character_Casual_Male.glb', import.meta.url).href,
+    parts: Object.freeze(['Body_010', 'Costume_6_001', 'Pants_010', 'Shoe_Sneakers_009', 'Clown_nose_001', 'Hat_010']),
+    scale: CREATIVE_CUSTOMER_SCALE,
     position: Object.freeze([2.55, 5.85]),
     faces: Object.freeze([3.75, 5.35]),
     animation: 'Idle',
@@ -191,17 +234,42 @@ const CHARACTER_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: 'business-woman',
     role: 'customer',
-    url: new URL('../character_exports_v2/character_Business_Woman.glb', import.meta.url).href,
+    parts: Object.freeze(['Body_010', 'Outerwear_029', 'Shorts_003', 'Shoe_Slippers_005', 'Hairstyle_male_010', 'Glasses_006']),
+    scale: CREATIVE_CUSTOMER_SCALE,
     position: Object.freeze([1.15, 6.1]),
     faces: Object.freeze([2.55, 5.85]),
     animation: 'Idle',
   }),
 ]);
 
+function retainCreativeParts(model, parts) {
+  const selectedParts = new Set(parts);
+  const removals = [];
+  model.traverse((object) => { if (object.isMesh && !selectedParts.has(object.name)) removals.push(object); });
+  removals.forEach((object) => object.removeFromParent());
+}
+
+function applyPlayerOutfitPalette(model) {
+  model.traverse((object) => {
+    if (!object.isMesh || PLAYER_OUTFIT_COLORS[object.name] === undefined) return;
+    const recolor = (material) => {
+      const clone = material.clone();
+      clone.map = null;
+      clone.color.setHex(PLAYER_OUTFIT_COLORS[object.name]);
+      clone.roughness = 0.78;
+      clone.metalness = 0;
+      clone.needsUpdate = true;
+      return clone;
+    };
+    object.material = Array.isArray(object.material)
+      ? object.material.map(recolor)
+      : recolor(object.material);
+  });
+}
 function configureCharacterModel(model, definition) {
   const configuredMaterials = new Set();
   model.name = `Character_${definition.id}`;
-  model.scale.setScalar(CHARACTER_SCALE);
+  model.scale.setScalar(definition.scale ?? CHARACTER_SCALE);
 
   model.traverse((object) => {
     if (!object.isMesh) return;
@@ -301,6 +369,7 @@ export class CharacterSystem {
     this.playerInput = new THREE.Vector3();
     this.mixers = [];
     this.playerColliders = [];
+    this.playerCollisionRecoveries = 0;
     this.playerSpeedMultiplier = 1;
     this.playerCarrying = false;
     this.playerActionUntil = 0;
@@ -380,6 +449,7 @@ export class CharacterSystem {
 
   setPlayerColliders(colliders) {
     this.playerColliders = colliders;
+    this.resolvePlayerCollisionOverlap();
   }
 
   setUnlockedDiningTables(tableIds) {
@@ -420,11 +490,32 @@ export class CharacterSystem {
   }
 
   _playerCollides(x, z) {
-    return this.playerColliders.some((collider) => (
-      collider.enabled !== false
-      && x >= collider.minX && x <= collider.maxX
-      && z >= collider.minZ && z <= collider.maxZ
-    ));
+    return pointCollides(this.playerColliders, x, z);
+  }
+
+  get playerIsColliding() {
+    const position = this.player?.model.position;
+    return position ? this._playerCollides(position.x, position.z) : false;
+  }
+
+  resolvePlayerCollisionOverlap() {
+    const model = this.player?.model;
+    if (!model || !this._playerCollides(model.position.x, model.position.z)) return false;
+
+    const safePoint = findNearestClearPoint(
+      this.playerColliders,
+      WORLD_CONFIG.playerBounds,
+      model.position.x,
+      model.position.z,
+    );
+    if (!safePoint) return false;
+
+    model.position.x = safePoint.x;
+    model.position.z = safePoint.z;
+    this.playerMarker.position.x = safePoint.x;
+    this.playerMarker.position.z = safePoint.z;
+    this.playerCollisionRecoveries += 1;
+    return true;
   }
 
   get queuedCustomerCount() {
@@ -511,6 +602,7 @@ export class CharacterSystem {
 
   _updatePlayer(delta) {
     if (!this.player) return;
+    this.resolvePlayerCollisionOverlap();
     const { model, definition } = this.player;
     const strength = Math.min(this.playerInput.length(), 1);
 
@@ -603,19 +695,12 @@ export class CharacterSystem {
         customer.state = 'walking-to-seat';
         customer.route = [...seat.route, seat.position];
         customer.routeIndex = 0;
-        this.setAnimation(definition.id, 'Walk_Customer');
+        this.setAnimation(definition.id, 'Carry_Walk_Customer');
       }
 
       if (customer.state === 'seated') {
         const seat = this.diningSeats.find(({ id }) => id === customer.seatId);
-        if (seat) {
-          model.rotation.y = dampAngle(
-            model.rotation.y,
-            targetRotation(seat.face[0] - model.position.x, seat.face[1] - model.position.z),
-            delta,
-            10,
-          );
-        }
+        if (seat) settleCustomerIntoSeat(model, seat, delta);
         if (elapsed < customer.stateUntil) return;
         customer.state = 'eating';
         customer.mealUntil = elapsed + CUSTOMER_EATING_DURATION + (customer.index % 3) * 0.65;
@@ -624,14 +709,7 @@ export class CharacterSystem {
 
       if (customer.state === 'eating') {
         const seat = this.diningSeats.find(({ id }) => id === customer.seatId);
-        if (seat) {
-          model.rotation.y = dampAngle(
-            model.rotation.y,
-            targetRotation(seat.face[0] - model.position.x, seat.face[1] - model.position.z),
-            delta,
-            10,
-          );
-        }
+        if (seat) settleCustomerIntoSeat(model, seat, delta);
         if (elapsed < customer.mealUntil) return;
         if (seat) this._markTableDirty(seat.tableId);
         customer.state = 'meal-finished';
@@ -673,8 +751,8 @@ export class CharacterSystem {
           if (customer.routeIndex >= customer.route.length) {
             if (customer.state === 'walking-to-seat') {
               customer.state = 'seated';
-              customer.stateUntil = elapsed + 0.5;
-              this.setAnimation(definition.id, 'Sit', 0.16);
+              customer.stateUntil = elapsed + 0.86;
+              this.setAnimation(definition.id, 'Sit', 0.12);
             } else if (customer.state === 'leaving') {
               customer.state = 'departed';
               customer.order = null;
@@ -727,10 +805,10 @@ export class CharacterSystem {
     seat.occupiedBy = servedCustomer.definition.id;
     servedCustomer.queueIndex = -1;
     servedCustomer.state = 'paying';
-    servedCustomer.stateUntil = elapsed + 0.68;
+    servedCustomer.stateUntil = elapsed + 1.05;
     servedCustomer.order = order ?? servedCustomer.order;
     servedCustomer.seatId = seat.id;
-    this.setAnimation(servedCustomer.definition.id, 'Pay', 0.1);
+    this.setAnimation(servedCustomer.definition.id, 'Receive_Order', 0.1);
 
     this.customers.forEach((customer) => {
       if (customer === servedCustomer || customer.state === 'departed' || customer.queueIndex <= 0) return;
@@ -804,18 +882,47 @@ export async function createCharacterSystem(onProgress) {
   const system = new CharacterSystem();
   let completed = 0;
 
-  const loadedCharacters = await Promise.all(CHARACTER_DEFINITIONS.map(async (definition, index) => {
-    const gltf = await loader.loadAsync(definition.url);
+  const load = async (url) => {
+    const gltf = await loader.loadAsync(url);
     completed += 1;
-    onProgress?.(completed / CHARACTER_DEFINITIONS.length);
-    return { gltf, definition, index };
-  }));
+    onProgress?.(completed / 2);
+    return gltf;
+  };
 
-  loadedCharacters.forEach(({ gltf, definition, index }) => {
-    system.addCharacter(gltf.scene, gltf.animations, definition, index);
+  const playerDefinition = CHARACTER_DEFINITIONS.find(({ role }) => role === 'player');
+  const customerDefinitions = CHARACTER_DEFINITIONS.filter(({ role }) => role === 'customer');
+  const [characterLibrary, managerGltf] = await Promise.all([
+    load(CREATIVE_CUSTOMER_LIBRARY_URL),
+    load(MANAGER_SOURCE_URL),
+  ]);
+
+  const playerModel = cloneSkeleton(characterLibrary.scene);
+  retainCreativeParts(playerModel, playerDefinition.parts);
+  applyPlayerOutfitPalette(playerModel);
+  system.addCharacter(playerModel, characterLibrary.animations, playerDefinition, 0);
+  customerDefinitions.forEach((definition, index) => {
+    const model = cloneSkeleton(characterLibrary.scene);
+    retainCreativeParts(model, definition.parts);
+    system.addCharacter(model, characterLibrary.animations, definition, index + 1);
   });
 
-  if (!system.player || system.customers.length !== CHARACTER_DEFINITIONS.length - 1) {
+  const managerModel = managerGltf.scene;
+  configureCharacterModel(managerModel, {
+    id: 'manager-source',
+    role: 'employee',
+    scale: CHARACTER_SCALE,
+    position: Object.freeze([0, 0]),
+    faces: Object.freeze([0, 1]),
+    animation: 'Idle',
+  });
+  managerModel.visible = false;
+  system.managerSource = Object.freeze({
+    model: managerModel,
+    animations: managerGltf.animations,
+  });
+  system.group.add(managerModel);
+
+  if (!system.player || system.customers.length !== customerDefinitions.length) {
     throw new Error('Character role assignment must include one player and eight customers');
   }
 
