@@ -285,7 +285,9 @@ export class BuildSystem {
           console.warn(`[build] pad pool exhausted, "${entry.id}" has no pad this frame`);
           return;
         }
-        pad.reset(entry.cost, entry.label, 'SHOP EXPANSION');
+        // "Shop expansion" is wrong while you are still opening the place.
+        const subtitle = OPENING_CHAIN.includes(entry.id) ? 'GRAND OPENING' : 'SHOP EXPANSION';
+        pad.reset(entry.cost, entry.label, subtitle);
         const [x, z] = entry.padAt ?? [entry.position[0], entry.position[2]];
         pad.placeAt(x, z);
         pad.group.visible = true;
@@ -422,7 +424,7 @@ export class BuildSystem {
       const pad = this.activePads.get(id);
       if (!pad) return;
       pad.paid = Math.min(paid, pad.cost);
-      pad.label.redraw(pad.remaining);
+      pad.refreshLabel();
     });
     this.revision += 1;
   }

@@ -56,7 +56,15 @@ function drawCashNote(context, x, y, width, height) {
   context.fill();
 }
 
-function createPadLabel(labelText, subtitle) {
+/**
+ * One canvas and one texture for the lifetime of the pad.
+ *
+ * This must never be recreated on reuse: the label plane's material binds this exact
+ * texture once, so handing back a fresh one would leave the pad rendering whatever the
+ * pool was constructed with — an empty name and a frozen "0" — while the real cost was
+ * still being charged.
+ */
+function createPadLabel() {
   const canvas = document.createElement('canvas');
   canvas.width = LABEL_SIZE;
   canvas.height = LABEL_SIZE;
@@ -67,13 +75,14 @@ function createPadLabel(labelText, subtitle) {
   texture.magFilter = THREE.LinearFilter;
   texture.generateMipmaps = false;
 
-  let drawn = null;
+  let drawnKey = null;
 
-  const redraw = (remaining) => {
-    // The change guard is the whole point: skip the GPU upload when nothing moved.
-    // Without it this re-uploaded the full texture on every payment tick.
-    if (remaining === drawn) return;
-    drawn = remaining;
+  const redraw = (remaining, labelText, subtitle) => {
+    // Skip the GPU upload when nothing visible changed. The key covers the text too, so
+    // reusing a pad for a different item always repaints.
+    const key = `${labelText}|${subtitle}|${remaining}`;
+    if (key === drawnKey) return;
+    drawnKey = key;
 
     context.clearRect(0, 0, LABEL_SIZE, LABEL_SIZE);
     context.textAlign = 'center';
@@ -195,9 +204,11 @@ export class PurchasePad {
    *                                             to procedural geometry when unavailable.
    * @param {CashFlightPool} options.flights     shared bill pool
    */
-  constructor({ id, cost, label, subtitle = 'SHOP EXPANSION', baseModel = null, flights }) {
+  constructor({ id, cost, label, subtitle = 'SHOP EXPANSION', flights }) {
     this.id = id;
     this.cost = cost;
+    this.labelText = label;
+    this.subtitle = subtitle;
     this.paid = 0;
     this.flights = flights;
     this._budget = 0;
@@ -208,17 +219,7 @@ export class PurchasePad {
     this.group.name = `Purchase_Pad_${id}`;
     this.group.visible = false;
 
-    const base = baseModel ?? createProceduralBase();
-    this.coin = base.getObjectByName('PurchasePad_Coin') ?? null;
-    this.ring = base.getObjectByName('PurchasePad_Ring') ?? null;
-    // The pad ships with a COL_ proxy; a pad you cannot stand on is useless.
-    base.traverse((object) => {
-      if (object.isMesh && (object.name.startsWith('COL_') || object.userData?.is_collider)) {
-        object.visible = false;
-      }
-    });
-
-    this.label = createPadLabel(label, subtitle);
+    this.label = createPadLabel();
     const plane = new THREE.Mesh(
       new THREE.PlaneGeometry(1.62, 1.62),
       new THREE.MeshBasicMaterial({ map: this.label.texture, transparent: true, depthWrite: false }),
@@ -230,8 +231,12 @@ export class PurchasePad {
     labelPivot.rotation.y = -Math.PI * 0.75;
     labelPivot.add(plane);
 
-    this.group.add(base, labelPivot);
-    this.label.redraw(cost);
+    this.group.add(createProceduralBase(), labelPivot);
+    this.refreshLabel();
+  }
+
+  refreshLabel() {
+    this.label.redraw(this.remaining, this.labelText, this.subtitle);
   }
 
   get remaining() {
@@ -252,10 +257,9 @@ export class PurchasePad {
     this.paid = 0;
     this._budget = 0;
     this._visualBudget = 0;
-    if (label !== undefined) {
-      this.label = createPadLabel(label, subtitle ?? 'SHOP EXPANSION');
-    }
-    this.label.redraw(cost);
+    if (label !== undefined) this.labelText = label;
+    if (subtitle !== undefined) this.subtitle = subtitle;
+    this.refreshLabel();
   }
 
   /**
@@ -267,11 +271,6 @@ export class PurchasePad {
 
     const pulse = 1 + Math.sin(elapsed * 4.4) * 0.04;
     this.group.scale.setScalar(pulse);
-    if (this.coin) {
-      this.coin.rotation.y += delta * 2.4;
-      this.coin.position.y = 0.28 + Math.sin(elapsed * 3.1) * 0.05;
-    }
-    if (this.ring) this.ring.rotation.y -= delta * 0.9;
 
     const deltaX = playerPosition.x - this.group.position.x;
     const deltaZ = playerPosition.z - this.group.position.z;
@@ -295,7 +294,7 @@ export class PurchasePad {
       this._visualBudget -= PAD.cashPerFlight;
       this.flights.spawn(playerPosition, this._target, elapsed);
     }
-    this.label.redraw(this.remaining);
+    this.refreshLabel();
 
     return this.complete;
   }
