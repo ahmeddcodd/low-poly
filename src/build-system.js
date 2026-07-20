@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import { CATALOG, CATALOG_BY_ID, OPENING_CHAIN } from './catalog.js';
 import { LEVELS, MAX_LEVEL, PAD, levelForStars, nextLevelFor } from './tuning.js';
 import { CashFlightPool, PurchasePad } from './purchase-pad.js';
-import { cloneAsset, configureObject, disposeObjectResources, hasAsset } from './gltf-utils.js';
+import { cloneAsset, disposeObjectResources, hasAsset } from './gltf-utils.js';
 
 // Matches the authored Ghost_Locked material in trays_support_all.glb so procedural
 // ghosts are indistinguishable from the ones that shipped with holograms.
@@ -105,6 +105,7 @@ export class BuildSystem {
     this._buildPadPool();
     this._applyOwnedSet();
     this._syncAvailability();
+    this.characters.setSpawnInterval?.(this.spawnInterval);
   }
 
   // ── construction ────────────────────────────────────────────────────────────
@@ -152,18 +153,13 @@ export class BuildSystem {
   }
 
   _buildPadPool() {
-    // Only a handful are ever live; 24 pads would mean 24 label canvases in VRAM.
-    const hasPadModel = hasAsset(this.supportsScene, 'Upgrade_CashPurchasePad');
+    // Only a handful are ever live; one pad per catalog entry would mean 28 label
+    // canvases sitting in VRAM.
     for (let index = 0; index < PAD_POOL_SIZE; index += 1) {
-      const baseModel = hasPadModel
-        ? cloneAsset(this.supportsScene, 'Upgrade_CashPurchasePad')
-        : null;
-      if (baseModel) configureObject(baseModel);
       const pad = new PurchasePad({
         id: `pool-${index}`,
         cost: 0,
         label: '',
-        baseModel,
         flights: this.flights,
       });
       this.group.add(pad.group);
@@ -316,6 +312,9 @@ export class BuildSystem {
     this.level = next.level;
     this.revision += 1;
     this._syncAvailability();
+    // A higher-level shop is a busier shop — this is both the balance knob and the
+    // visible reward for levelling.
+    this.characters.setSpawnInterval?.(this.spawnInterval);
     this.onLevelUp?.(this.level, previous);
   }
 
@@ -418,6 +417,7 @@ export class BuildSystem {
     this.level = levelForStars(stars).level;
     this._applyOwnedSet();
     this._syncAvailability();
+    this.characters.setSpawnInterval?.(this.spawnInterval);
     Object.entries(padPaid).forEach(([id, paid]) => {
       const pad = this.activePads.get(id);
       if (!pad) return;

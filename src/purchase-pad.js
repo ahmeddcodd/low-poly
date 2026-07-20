@@ -15,7 +15,7 @@ import * as THREE from 'three';
 import { PAD, padDrainRate } from './tuning.js';
 import { disposeObjectResources } from './gltf-utils.js';
 
-const LABEL_SIZE = 256;
+const LABEL_SIZE = 384;
 
 function roundedRect(context, x, y, width, height, radius) {
   context.beginPath();
@@ -31,15 +31,29 @@ function roundedRect(context, x, y, width, height, radius) {
   context.closePath();
 }
 
-function drawCashNote(context, x, y, width = 66, height = 35) {
-  roundedRect(context, x, y, width, height, 6);
-  context.fillStyle = '#55e83a';
+/** Chunky banknote with a fake extruded edge, matching the hire pads. */
+function drawCashNote(context, x, y, width, height) {
+  roundedRect(context, x + 5, y + 6, width, height, 13);
+  context.fillStyle = '#1f7d1c';
   context.fill();
-  context.lineWidth = 3;
-  context.strokeStyle = '#1f9c25';
+
+  roundedRect(context, x, y, width, height, 13);
+  context.fillStyle = '#50e531';
+  context.fill();
+  context.lineWidth = 6;
+  context.strokeStyle = '#1f9f1f';
   context.stroke();
-  context.fillStyle = '#d7ff79';
-  context.fillRect(x + width * 0.35, y + height * 0.21, width * 0.3, height * 0.57);
+
+  context.fillStyle = '#cfff74';
+  context.beginPath();
+  context.ellipse(x + width * 0.5, y + height * 0.5, width * 0.13, height * 0.26, 0, 0, Math.PI * 2);
+  context.fill();
+  context.beginPath();
+  context.ellipse(x + width * 0.17, y + height * 0.28, width * 0.06, height * 0.13, 0, 0, Math.PI * 2);
+  context.fill();
+  context.beginPath();
+  context.ellipse(x + width * 0.83, y + height * 0.72, width * 0.06, height * 0.13, 0, 0, Math.PI * 2);
+  context.fill();
 }
 
 function createPadLabel(labelText, subtitle) {
@@ -56,47 +70,61 @@ function createPadLabel(labelText, subtitle) {
   let drawn = null;
 
   const redraw = (remaining) => {
-    // The whole point of the change guard: skip the GPU upload when nothing moved.
+    // The change guard is the whole point: skip the GPU upload when nothing moved.
+    // Without it this re-uploaded the full texture on every payment tick.
     if (remaining === drawn) return;
     drawn = remaining;
 
     context.clearRect(0, 0, LABEL_SIZE, LABEL_SIZE);
     context.textAlign = 'center';
     context.textBaseline = 'middle';
+
     context.fillStyle = '#ffffff';
-    context.font = `900 ${labelText.length > 10 ? 19 : 24}px Arial, sans-serif`;
-    context.fillText(labelText, 128, 54);
-    drawCashNote(context, 37, 90);
-    context.font = '900 43px Arial, sans-serif';
-    context.fillText(String(remaining), 172, 108);
-    context.fillStyle = '#d8e2d1';
-    context.font = '800 15px Arial, sans-serif';
-    context.fillText(subtitle, 128, 174);
+    context.font = `900 ${labelText.length > 10 ? 27 : 36}px Arial, sans-serif`;
+    context.fillText(labelText, 192, 86);
+
+    drawCashNote(context, 58, 142, 112, 62);
+
+    // Outlined so the number stays readable against the bright pad and the floor.
+    context.font = '900 74px Arial, sans-serif';
+    context.lineWidth = 9;
+    context.strokeStyle = '#243024';
+    context.lineJoin = 'round';
+    context.strokeText(String(remaining), 255, 174);
+    context.fillStyle = '#ffffff';
+    context.fillText(String(remaining), 255, 174);
+
+    context.fillStyle = '#cfd5c9';
+    context.font = '800 24px Arial, sans-serif';
+    context.fillText(subtitle, 192, 262);
     texture.needsUpdate = true;
   };
 
   return { texture, redraw };
 }
 
+/**
+ * The pad itself. The authored Upgrade_CashPurchasePad GLB was tried here first, but it
+ * renders as a washed-out pale disc that swallows the label — this octagon reads far more
+ * clearly from the fixed isometric camera, and matches the manager hire pads.
+ */
 function createProceduralBase() {
   const group = new THREE.Group();
   const rim = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.06, 1.06, 0.11, 8),
-    new THREE.MeshStandardMaterial({ color: 0xf7fff0, roughness: 0.74 }),
+    new THREE.CylinderGeometry(1.04, 1.04, 0.12, 8),
+    new THREE.MeshStandardMaterial({ color: 0xf8fff1, roughness: 0.72 }),
   );
   const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.92, 0.92, 0.16, 8),
-    new THREE.MeshStandardMaterial({ color: 0x4d594c, roughness: 0.82 }),
+    new THREE.CylinderGeometry(0.91, 0.91, 0.16, 8),
+    new THREE.MeshStandardMaterial({ color: 0x555a50, roughness: 0.82 }),
   );
   rim.rotation.y = Math.PI / 8;
   base.rotation.y = Math.PI / 8;
   base.position.y = 0.07;
+  rim.receiveShadow = true;
+  base.castShadow = true;
+  base.receiveShadow = true;
   group.add(rim, base);
-  group.traverse((object) => {
-    if (!object.isMesh) return;
-    object.castShadow = true;
-    object.receiveShadow = true;
-  });
   return group;
 }
 

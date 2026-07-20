@@ -391,6 +391,10 @@ export class CharacterSystem {
     this.customerReturnsEnabled = true;
     // Held shut through the cold open; the build system opens it once the shop can serve.
     this.customerSpawningEnabled = false;
+    // A single arrival cursor, so customers always come in one at a time with a real gap
+    // no matter how many are recycled in the same frame.
+    this.spawnInterval = CUSTOMER_SPAWN_INTERVAL;
+    this.nextSpawnAt = CUSTOMER_SPAWN_DELAY;
     // Raised by the takeaway-window upgrade; also the implicit default while the shop has
     // no seating at all.
     this.takeawayShare = 0;
@@ -426,7 +430,7 @@ export class CharacterSystem {
       const queueIndex = this.customers.length;
       character.queueIndex = queueIndex;
       character.state = 'waiting-to-enter';
-      character.spawnAt = CUSTOMER_SPAWN_DELAY + queueIndex * CUSTOMER_SPAWN_INTERVAL;
+      this._scheduleSpawn(character, 0);
       character.order = null;
       character.seatId = null;
       character.departedAt = Infinity;
@@ -485,7 +489,27 @@ export class CharacterSystem {
   }
 
   setCustomerSpawningEnabled(enabled) {
-    this.customerSpawningEnabled = Boolean(enabled);
+    const next = Boolean(enabled);
+    if (next && !this.customerSpawningEnabled) {
+      // Everyone queued up while the shop was still being built has a spawn time far in
+      // the past, so without re-staggering they would all walk in on the same frame.
+      this.nextSpawnAt = this.elapsed;
+      this.customers
+        .filter(({ state }) => state === 'waiting-to-enter')
+        .forEach((customer) => this._scheduleSpawn(customer, this.elapsed));
+    }
+    this.customerSpawningEnabled = next;
+  }
+
+  /** Seconds between arrivals. Driven by shop level — a busier shop feels busier. */
+  setSpawnInterval(seconds) {
+    this.spawnInterval = Math.max(0.4, seconds);
+  }
+
+  _scheduleSpawn(customer, elapsed) {
+    const at = Math.max(elapsed, this.nextSpawnAt);
+    customer.spawnAt = at;
+    this.nextSpawnAt = at + this.spawnInterval;
   }
 
   setTakeawayShare(share) {
@@ -690,7 +714,6 @@ export class CharacterSystem {
       if (nextQueueIndex >= CUSTOMER_QUEUE_SLOTS.length) return;
       customer.queueIndex = nextQueueIndex;
       customer.state = 'waiting-to-enter';
-      customer.spawnAt = elapsed + 0.25 + nextQueueIndex * 0.08;
       customer.order = null;
       customer.seatId = null;
       customer.mealUntil = 0;
@@ -703,6 +726,7 @@ export class CharacterSystem {
       customer.routeIndex = 0;
       customer.model.position.x = CUSTOMER_ENTRY_POSITION[0];
       customer.model.position.z = CUSTOMER_ENTRY_POSITION[1];
+      this._scheduleSpawn(customer, elapsed);
       nextQueueIndex += 1;
     });
   }
