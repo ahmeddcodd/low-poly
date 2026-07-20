@@ -878,14 +878,12 @@ export class CharacterSystem {
     });
 
     if (!seat) {
-      // With no seating built at all, everyone takes their order to go. Without this the
-      // shop is unserveable before the first dining set is affordable — orders complete
-      // and park in waiting-for-table forever, so the player can never earn anything.
-      // Once tables exist, a full room is real pressure again and drives the cleaning loop.
-      const hasSeating = this.diningTables.some(({ unlocked }) => unlocked);
-      if (hasSeating && this.takeawayShare <= 0) {
-        return Object.freeze({ ok: false, reason: 'no-seat' });
-      }
+      // Seating is always a bonus, never a gate. When it gated service, buying the first
+      // table dropped throughput from 12.5 customers/min to 0.8 — the shop spent 93% of
+      // its time parked in waiting-for-table behind two seats and a dirty table, so a
+      // $150 "upgrade" made the business 15x worse. Now anyone who cannot get a clean
+      // seat simply takes their order to go at base price, and seats earn a dine-in bonus
+      // on top. More seats and cleaner tables mean more money, never less throughput.
       servedCustomer.queueIndex = -1;
       servedCustomer.state = 'paying';
       servedCustomer.stateUntil = elapsed + 1.05;

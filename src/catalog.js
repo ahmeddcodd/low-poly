@@ -370,6 +370,50 @@ export const CATALOG_BY_ID = Object.freeze(
   new Map(CATALOG.map((entry) => [entry.id, entry])),
 );
 
+// The line under the price on each pad. Every pad used to read the same generic
+// "SHOP EXPANSION", which told the player nothing about what they were buying. These say
+// what the thing DOES — kept to two or three short words so they stay legible on a small
+// pad seen from a fixed isometric camera.
+const PAD_SUBTITLES = Object.freeze({
+  'serving-counter': 'SERVE FROM HERE',
+  'vanilla-machine': 'MAKES ICE CREAM',
+  'cone-dispenser': 'OPENS THE SHOP',
+
+  'ice-cream-holder': 'HOLDS 4 ORDERS',
+  'cup-dispenser': 'CUPS PAY MORE',
+  'starter-storage': 'MORE STOCK',
+  'chocolate-machine': 'NEW FLAVOUR',
+
+  'first-table': 'GUESTS SIT IN',
+  'tray-four': 'CARRY 4 AT ONCE',
+  'dining-north': '+2 SEATS',
+  'counter-extension': 'BIGGER COUNTER',
+  'spoon-wafer-dispenser': 'FINISH CUPS',
+  'napkin-holder': 'HAPPIER GUESTS',
+  'strawberry-machine': 'NEW FLAVOUR',
+
+  'hr-office': 'HIRE STAFF',
+  'dining-center': '+2 SEATS',
+  'storage-chest': 'MORE STOCK',
+
+  'basic-topping': 'UNLOCKS SUNDAES',
+  'syrup-bottles': 'RICHER SUNDAES',
+  'takeaway-window': 'NO SEAT NEEDED',
+  'mint-machine': 'PREMIUM FLAVOUR',
+
+  'speed-booster': 'FASTER MACHINES',
+  'capacity-module': 'BIGGER TANKS',
+  'improved-storage': 'MORE STOCK',
+  'gm-office': 'DOUBLE PROFIT',
+  'deluxe-topping': '9 TOPPINGS',
+  'auto-dispense': 'RUNS ITSELF',
+  'premium-freezer': 'MAXIMUM STOCK',
+});
+
+export function padSubtitle(id) {
+  return PAD_SUBTITLES[id] ?? 'SHOP EXPANSION';
+}
+
 // The Act 1 chain, in order. Used to keep the opening strictly linear.
 export const OPENING_CHAIN = Object.freeze(['serving-counter', 'vanilla-machine', 'cone-dispenser']);
 

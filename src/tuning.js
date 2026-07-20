@@ -18,6 +18,10 @@ export const FLAVOR_BONUS = Object.freeze({
 // so the average ticket climbs as the menu grows.
 export const RECIPE_TIER_WEIGHTS = Object.freeze([6, 3, 2, 1]);
 
+// Sitting in pays more than taking away. This is the whole mechanical point of seating:
+// it never gates service, it just raises the ticket on customers who get a clean seat.
+export const DINE_IN_BONUS = 1.5;
+
 // Soft time pressure: patience only ever changes the payout, never fails the run.
 export const PATIENCE = Object.freeze({
   baseSeconds: 26,

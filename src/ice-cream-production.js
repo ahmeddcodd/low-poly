@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { WORLD_CONFIG } from './config.js';
 import { TableCleanupSystem } from './table-cleanup-system.js';
 import { HiringSystem } from './hiring-system.js';
+import { DINE_IN_BONUS } from './tuning.js';
 
 const MACHINE_DEFINITIONS = Object.freeze([
   Object.freeze({
@@ -858,7 +859,10 @@ export class IceCreamProductionSystem {
     const order = this.activeOrder;
     const basePayment = order.container === 'cup' ? 20 : 15;
     const profitMultiplier = this.hiringSystem?.profitMultiplier ?? 1;
-    const payment = basePayment * profitMultiplier;
+    // Customers who got a clean seat are worth more than takeaway. This is what the
+    // player actually feels when they buy a table.
+    const dineIn = service.seatId ? DINE_IN_BONUS : 1;
+    const payment = Math.round(basePayment * dineIn * profitMultiplier);
     this._hideOrderBubble(service.customer);
     this._showCustomerProduct(service.customer, order);
     this._clearCarryProduct();
@@ -1041,21 +1045,6 @@ export class IceCreamProductionSystem {
       return;
     }
 
-    if (this.stage === 'waiting-for-table') {
-      if (this.characterSystem.availableSeatCount <= 0) {
-        this._setStatus(
-          this.characterSystem.cleanableTableCount > 0 ? 'Clean a table for this customer' : 'Waiting for diners to finish',
-          this.characterSystem.cleanableTableCount > 0
-            ? 'Pick up the glowing garbage and throw it in the green trash bin'
-            : 'The completed order is safe at the counter until a table becomes cleanable',
-        );
-        return;
-      }
-      const service = this.characterSystem.serveFrontCustomer(elapsed, this.activeOrder);
-      if (service.ok) this._completeService(service, elapsed);
-      return;
-    }
-
     if (this.stage === 'need-container') {
       const stationPoint = this.stationPoints.get(this.activeOrder.container);
       if (!stationPoint || !this._near(playerPosition, stationPoint)) return;
@@ -1139,21 +1128,9 @@ export class IceCreamProductionSystem {
     }
 
     if (this.stage === 'serving' && elapsed >= this.serveReadyAt) {
+      // Only 'no-customer' can fail now — seating never blocks a serve.
       const service = this.characterSystem.serveFrontCustomer(elapsed, this.activeOrder);
-      if (!service.ok) {
-        if (service.reason === 'no-seat') {
-          this._clearCarryProduct();
-          this.characterSystem.setPlayerCarrying(false);
-          this.stage = 'waiting-for-table';
-          this._setStatus(
-            this.characterSystem.cleanableTableCount > 0 ? 'Clean a table to free seats' : 'Waiting for a free table',
-            this.characterSystem.cleanableTableCount > 0
-              ? 'Pick up the glowing table garbage and throw it in the trash bin'
-              : 'The completed order is waiting safely at the counter',
-          );
-        }
-        return;
-      }
+      if (!service.ok) return;
       this._completeService(service, elapsed);
     }
   }

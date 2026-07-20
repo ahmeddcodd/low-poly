@@ -8,7 +8,7 @@
 // ordering, no already-applied bookkeeping.
 
 import * as THREE from 'three';
-import { CATALOG, CATALOG_BY_ID, OPENING_CHAIN } from './catalog.js';
+import { CATALOG, CATALOG_BY_ID, OPENING_CHAIN, padSubtitle } from './catalog.js';
 import { LEVELS, MAX_LEVEL, PAD, levelForStars, nextLevelFor } from './tuning.js';
 import { CashFlightPool, PurchasePad } from './purchase-pad.js';
 import { cloneAsset, disposeObjectResources, hasAsset } from './gltf-utils.js';
@@ -285,9 +285,7 @@ export class BuildSystem {
           console.warn(`[build] pad pool exhausted, "${entry.id}" has no pad this frame`);
           return;
         }
-        // "Shop expansion" is wrong while you are still opening the place.
-        const subtitle = OPENING_CHAIN.includes(entry.id) ? 'GRAND OPENING' : 'SHOP EXPANSION';
-        pad.reset(entry.cost, entry.label, subtitle);
+        pad.reset(entry.cost, entry.label, padSubtitle(entry.id));
         const [x, z] = entry.padAt ?? [entry.position[0], entry.position[2]];
         pad.placeAt(x, z);
         pad.group.visible = true;

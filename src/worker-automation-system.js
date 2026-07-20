@@ -203,7 +203,7 @@ export class WorkerAutomationSystem {
       const point = finishStation ? this.productionSystem.stationPoints.get(finishStation) : null;
       return point ? [point.x, point.z] : null;
     }
-    if (stage === 'need-serve' || stage === 'serving' || stage === 'waiting-for-table') {
+    if (stage === 'need-serve' || stage === 'serving') {
       const point = this.productionSystem.stationPoints.get('serve');
       return point ? [point.x, point.z] : null;
     }
