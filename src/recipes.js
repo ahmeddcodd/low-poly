@@ -28,7 +28,9 @@ export const RECIPES = Object.freeze({
     scoops: 1,
     base: 15,
     tier: 1,
-    requiresStations: Object.freeze(['cone-dispenser']),
+    // Station KEYS as reported by unlockedStationKeys ('cone' | 'cup' | 'topping' |
+    // 'spoon'), not catalog ids. These are the `station` field on SUPPORT_LAYOUT.
+    requiresStations: Object.freeze(['cone']),
     minFlavors: 1,
   }),
   'single-cup': Object.freeze({
@@ -38,7 +40,7 @@ export const RECIPES = Object.freeze({
     scoops: 1,
     base: 22,
     tier: 2,
-    requiresStations: Object.freeze(['cup-dispenser']),
+    requiresStations: Object.freeze(['cup']),
     minFlavors: 1,
   }),
   'double-cone': Object.freeze({
@@ -48,7 +50,7 @@ export const RECIPES = Object.freeze({
     scoops: 2,
     base: 40,
     tier: 3,
-    requiresStations: Object.freeze(['cone-dispenser']),
+    requiresStations: Object.freeze(['cone']),
     // Two distinct flavors — enforced by the authored product set, not just by design.
     minFlavors: 2,
     distinctFlavors: true,
@@ -60,7 +62,7 @@ export const RECIPES = Object.freeze({
     scoops: 2,
     base: 95,
     tier: 4,
-    requiresStations: Object.freeze(['cup-dispenser', 'basic-topping', 'spoon-wafer-dispenser']),
+    requiresStations: Object.freeze(['cup', 'topping', 'spoon']),
     // The model bakes in which two scoops it has.
     fixedFlavors: SUNDAE_FLAVORS,
     flatPrice: true,
@@ -187,6 +189,26 @@ export function priceOrder(order, {
 
   return Math.round(unit * (order.quantity ?? 1) * tipMultiplier * profitMultiplier);
 }
+
+/**
+ * Every product node the game can ever need to display, so the carry rig and the customer
+ * hand props can preload all of them. Derived from the same canonicalisation used at
+ * runtime, which guarantees the preloaded set and the resolved set never drift apart.
+ */
+export const ALL_PRODUCT_NODES = Object.freeze((() => {
+  const nodes = new Set(['Product_Sundae_Deluxe']);
+  NODE_FLAVOR_PRIORITY.forEach((flavor) => {
+    nodes.add(`Product_${capitalise(flavor)}_Cone`);
+    nodes.add(`Product_${capitalise(flavor)}_Cup`);
+  });
+  for (let i = 0; i < NODE_FLAVOR_PRIORITY.length; i += 1) {
+    for (let j = i + 1; j < NODE_FLAVOR_PRIORITY.length; j += 1) {
+      const [a, b] = canonicalPair([NODE_FLAVOR_PRIORITY[i], NODE_FLAVOR_PRIORITY[j]]);
+      nodes.add(`Product_${capitalise(a)}_${capitalise(b)}_Cone`);
+    }
+  }
+  return [...nodes];
+})());
 
 export function recipeLabel(order) {
   const recipe = RECIPES[order.recipeId];

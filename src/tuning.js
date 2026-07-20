@@ -37,24 +37,30 @@ export const PATIENCE = Object.freeze({
   ]),
 });
 
-// 15 levels on a ~3.2n² curve. Thresholds are deliberately stretched so levelling
-// keeps pace with the money curve instead of maxing out a third of the way in.
+// 15 levels on a ~1.6n² curve.
+//
+// Calibrated against measured throughput, not a guess. An earlier ~3.2n² curve assumed
+// roughly 20 customers/minute; instrumenting a real run showed 5-12/min once the player is
+// also banking cash, buying pads and cleaning tables. That curve put levels 2-4 inside the
+// first two minutes and then walled the player for six minutes with nothing to reach for.
+// At ~12/min these thresholds put level 15 around the 25 minute mark with a level roughly
+// every 90 seconds throughout.
 export const LEVELS = Object.freeze([
   Object.freeze({ level: 1, stars: 0, spawnInterval: 5.0 }),
-  Object.freeze({ level: 2, stars: 5, spawnInterval: 4.7 }),
-  Object.freeze({ level: 3, stars: 14, spawnInterval: 4.4 }),
-  Object.freeze({ level: 4, stars: 28, spawnInterval: 4.1 }),
-  Object.freeze({ level: 5, stars: 50, spawnInterval: 3.8 }),
-  Object.freeze({ level: 6, stars: 80, spawnInterval: 3.5 }),
-  Object.freeze({ level: 7, stars: 115, spawnInterval: 3.2 }),
-  Object.freeze({ level: 8, stars: 155, spawnInterval: 3.0 }),
-  Object.freeze({ level: 9, stars: 205, spawnInterval: 2.8 }),
-  Object.freeze({ level: 10, stars: 260, spawnInterval: 2.6 }),
-  Object.freeze({ level: 11, stars: 320, spawnInterval: 2.4 }),
-  Object.freeze({ level: 12, stars: 390, spawnInterval: 2.2 }),
-  Object.freeze({ level: 13, stars: 460, spawnInterval: 2.0 }),
-  Object.freeze({ level: 14, stars: 540, spawnInterval: 1.7 }),
-  Object.freeze({ level: 15, stars: 625, spawnInterval: 1.4 }),
+  Object.freeze({ level: 2, stars: 4, spawnInterval: 4.7 }),
+  Object.freeze({ level: 3, stars: 10, spawnInterval: 4.4 }),
+  Object.freeze({ level: 4, stars: 18, spawnInterval: 4.1 }),
+  Object.freeze({ level: 5, stars: 28, spawnInterval: 3.8 }),
+  Object.freeze({ level: 6, stars: 42, spawnInterval: 3.5 }),
+  Object.freeze({ level: 7, stars: 58, spawnInterval: 3.2 }),
+  Object.freeze({ level: 8, stars: 78, spawnInterval: 3.0 }),
+  Object.freeze({ level: 9, stars: 100, spawnInterval: 2.8 }),
+  Object.freeze({ level: 10, stars: 128, spawnInterval: 2.6 }),
+  Object.freeze({ level: 11, stars: 160, spawnInterval: 2.4 }),
+  Object.freeze({ level: 12, stars: 195, spawnInterval: 2.2 }),
+  Object.freeze({ level: 13, stars: 232, spawnInterval: 2.0 }),
+  Object.freeze({ level: 14, stars: 272, spawnInterval: 1.7 }),
+  Object.freeze({ level: 15, stars: 315, spawnInterval: 1.4 }),
 ]);
 
 export const MAX_LEVEL = LEVELS[LEVELS.length - 1].level;

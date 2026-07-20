@@ -4,6 +4,9 @@ import { WORLD_CONFIG } from './config.js';
 import { TableCleanupSystem } from './table-cleanup-system.js';
 import { HiringSystem } from './hiring-system.js';
 import { DINE_IN_BONUS } from './tuning.js';
+import {
+  ALL_PRODUCT_NODES, RECIPES, priceOrder, recipeLabel, resolveProductNode, rollOrder,
+} from './recipes.js';
 
 const MACHINE_DEFINITIONS = Object.freeze([
   Object.freeze({
@@ -331,13 +334,23 @@ function createOrderBubble(order) {
     context.stroke();
   }
 
+  // Multi-scoop names ("VANILLA + MINT") do not fit the bubble, so the headline stays the
+  // recipe and the flavours go on the second line.
+  const recipe = RECIPES[order.recipeId];
+  const headline = recipe && recipe.scoops > 1
+    ? recipe.label.toUpperCase()
+    : (ORDER_FLAVOR_LABELS[order.flavor] ?? order.flavor.toUpperCase());
+  const detail = recipe && recipe.scoops > 1
+    ? recipeLabel(order)
+    : `${order.container.toUpperCase()}  •  1`;
+
   context.textAlign = 'center';
   context.fillStyle = '#ffffff';
   context.font = '900 35px Arial, sans-serif';
-  context.fillText(ORDER_FLAVOR_LABELS[order.flavor], 241, 62);
+  context.fillText(headline, 241, 62);
   context.fillStyle = '#d8ffd2';
-  context.font = '800 27px Arial, sans-serif';
-  context.fillText(`${order.container.toUpperCase()}  •  1`, 241, 108);
+  context.font = `800 ${detail.length > 16 ? 21 : 27}px Arial, sans-serif`;
+  context.fillText(detail, 241, 108);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -560,12 +573,13 @@ export class IceCreamProductionSystem {
     configureObject(tray);
     this.carryRig.add(tray);
 
+    // Every recipe the menu can ever produce, not just single scoops — doubles and the
+    // sundae have to be preloaded too or resolveProductNode would ask for a clone that
+    // was never made.
     const carryNames = new Set([
       PRODUCT_NAMES.cone,
       PRODUCT_NAMES.cup,
-      ...Object.values(PRODUCT_NAMES)
-        .filter((value) => typeof value === 'object')
-        .flatMap((value) => Object.values(value)),
+      ...ALL_PRODUCT_NODES,
     ]);
 
     carryNames.forEach((name) => {
@@ -739,7 +753,8 @@ export class IceCreamProductionSystem {
   }
 
   _showCustomerProduct(customer, order) {
-    const productName = PRODUCT_NAMES[order.flavor][order.container];
+    const productName = resolveProductNode(order);
+    if (!productName) return;
     const product = cloneAsset(this.productsScene, productName);
     const gripBone = customer.model.getObjectByName('RightHandProp');
     if (!gripBone) throw new Error(`Missing right-hand prop socket for ${customer.definition.id}`);
@@ -857,12 +872,15 @@ export class IceCreamProductionSystem {
 
   _completeService(service, elapsed) {
     const order = this.activeOrder;
-    const basePayment = order.container === 'cup' ? 20 : 15;
     const profitMultiplier = this.hiringSystem?.profitMultiplier ?? 1;
     // Customers who got a clean seat are worth more than takeaway. This is what the
     // player actually feels when they buy a table.
     const dineIn = service.seatId ? DINE_IN_BONUS : 1;
-    const payment = Math.round(basePayment * dineIn * profitMultiplier);
+    const payment = priceOrder(order, {
+      menuBonuses: this.menuBonuses,
+      tipMultiplier: dineIn,
+      profitMultiplier,
+    });
     this._hideOrderBubble(service.customer);
     this._showCustomerProduct(service.customer, order);
     this._clearCarryProduct();
@@ -912,15 +930,23 @@ export class IceCreamProductionSystem {
   }
 
   _startOrder() {
-    const unlockedFlavors = this.unlockedFlavorIds;
-    if (unlockedFlavors.length === 0) return false;
-    const flavor = unlockedFlavors[this.servedCount % unlockedFlavors.length];
-    // Only ask for containers the shop can actually hand out — early on there is a cone
-    // dispenser and nothing else.
-    const containers = ['cone', 'cup'].filter((option) => this.unlockedStationKeys.has(option));
-    if (containers.length === 0) return false;
-    const container = containers[this.servedCount % containers.length];
-    const order = Object.freeze({ flavor, container });
+    // Weighted toward the richest recipe the shop can currently make, so the average
+    // ticket climbs as the menu grows instead of staying flat forever.
+    const rolled = rollOrder({
+      flavors: new Set(this.unlockedFlavorIds),
+      stations: this.unlockedStationKeys,
+    });
+    if (!rolled) return false;
+
+    // `flavor` is the scoop currently being made. Single-scoop recipes never advance it;
+    // doubles walk the player to a second machine. Keeping the field means every existing
+    // marker lookup and status string keeps working unchanged.
+    const order = {
+      ...rolled,
+      scoopIndex: 0,
+      flavor: rolled.flavors[0],
+    };
+    const container = order.container;
     const customer = this.characterSystem.assignFrontCustomerOrder(order);
     if (!customer) return false;
     this.activeOrder = order;
@@ -929,7 +955,7 @@ export class IceCreamProductionSystem {
     this._setTargetMarker(`station-${container}`);
     this._setStatus(
       `Pick up a ${container}`,
-      `Walk to the glowing ${container} dispenser for the ${flavor} order`,
+      `Walk to the glowing ${container} dispenser for the ${recipeLabel(order).toLowerCase()} order`,
     );
     return true;
   }
@@ -1075,8 +1101,23 @@ export class IceCreamProductionSystem {
 
     if (this.stage === 'dispensing') {
       if (elapsed < this.dispenseReadyAt) return;
-      const productName = PRODUCT_NAMES[this.activeOrder.flavor][this.activeOrder.container];
-      this._setCarryProduct(productName);
+      const order = this.activeOrder;
+
+      // A double scoop needs a second machine. Send the player on before finishing.
+      if (order.scoopIndex + 1 < order.flavors.length) {
+        order.scoopIndex += 1;
+        order.flavor = order.flavors[order.scoopIndex];
+        this.stage = 'need-machine';
+        this._setTargetMarker(`machine-${order.flavor}`);
+        this._setStatus(
+          `Add a ${order.flavor} scoop`,
+          `This is a double — take it to the glowing ${order.flavor} machine`,
+        );
+        return;
+      }
+
+      const productName = resolveProductNode(order);
+      if (productName) this._setCarryProduct(productName);
 
       // The finishing station is optional — early on there is no topping station or spoon
       // dispenser at all. Sending the player to one that has not been built yet is an
