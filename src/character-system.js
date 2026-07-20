@@ -55,11 +55,7 @@ const PLAYER_OUTFIT_COLORS = Object.freeze({
 });
 const SEATED_FORWARD_OFFSET = 0.12;
 const SEATED_SETTLE_SPEED = 12;
-// Customers used to become visible at z=8.15 — barely half a metre outside the doorway —
-// which read as them popping into existence rather than arriving. They now spawn out on
-// the approach and walk in through the door gap (which sits at x=-2.5), and walk back out
-// the same way before disappearing. Both points stay inside Exterior_Grass_Base (z<=11.49).
-const CUSTOMER_ENTRY_POSITION = Object.freeze([-2.5, 11]);
+const CUSTOMER_ENTRY_POSITION = Object.freeze([-2.5, 8.15]);
 const CUSTOMER_ENTRY_INSIDE = Object.freeze([-2.5, 6.72]);
 const PLAYER_START_POSITION = Object.freeze([0, -2.5]);
 const ORDER_COUNTER_POINT = Object.freeze([1.55, -0.82]);
@@ -389,17 +385,7 @@ export class CharacterSystem {
       occupiedBy: null,
     }));
     this.customerReturnsEnabled = true;
-    // Held shut through the cold open; the build system opens it once the shop can serve.
-    this.customerSpawningEnabled = false;
-    // A single arrival cursor, so customers always come in one at a time with a real gap
-    // no matter how many are recycled in the same frame.
-    this.spawnInterval = CUSTOMER_SPAWN_INTERVAL;
-    this.nextSpawnAt = CUSTOMER_SPAWN_DELAY;
-    // Raised by the takeaway-window upgrade; also the implicit default while the shop has
-    // no seating at all.
-    this.takeawayShare = 0;
     this.customerVisitCount = 0;
-    this.playerBounds = { ...WORLD_CONFIG.playerBounds };
     this.playerMarker = createPlayerMarker();
     this.group.add(this.playerMarker);
   }
@@ -430,7 +416,7 @@ export class CharacterSystem {
       const queueIndex = this.customers.length;
       character.queueIndex = queueIndex;
       character.state = 'waiting-to-enter';
-      this._scheduleSpawn(character, 0);
+      character.spawnAt = CUSTOMER_SPAWN_DELAY + queueIndex * CUSTOMER_SPAWN_INTERVAL;
       character.order = null;
       character.seatId = null;
       character.departedAt = Infinity;
@@ -488,39 +474,6 @@ export class CharacterSystem {
     this.customerReturnsEnabled = Boolean(enabled);
   }
 
-  setCustomerSpawningEnabled(enabled) {
-    const next = Boolean(enabled);
-    if (next && !this.customerSpawningEnabled) {
-      // Everyone queued up while the shop was still being built has a spawn time far in
-      // the past, so without re-staggering they would all walk in on the same frame.
-      this.nextSpawnAt = this.elapsed;
-      this.customers
-        .filter(({ state }) => state === 'waiting-to-enter')
-        .forEach((customer) => this._scheduleSpawn(customer, this.elapsed));
-    }
-    this.customerSpawningEnabled = next;
-  }
-
-  /** Seconds between arrivals. Driven by shop level — a busier shop feels busier. */
-  setSpawnInterval(seconds) {
-    this.spawnInterval = Math.max(0.4, seconds);
-  }
-
-  _scheduleSpawn(customer, elapsed) {
-    const at = Math.max(elapsed, this.nextSpawnAt);
-    customer.spawnAt = at;
-    this.nextSpawnAt = at + this.spawnInterval;
-  }
-
-  setTakeawayShare(share) {
-    this.takeawayShare = Math.max(0, Math.min(1, share ?? 0));
-  }
-
-  /** Relaxed during the cold open so the player can start on the pavement outside. */
-  setPlayerBounds(bounds) {
-    this.playerBounds = { ...this.playerBounds, ...bounds };
-  }
-
   setPlayerCarrying(carrying) {
     this.playerCarrying = carrying;
     if (!this.player || this.elapsed < this.playerActionUntil) return;
@@ -551,7 +504,7 @@ export class CharacterSystem {
 
     const safePoint = findNearestClearPoint(
       this.playerColliders,
-      this.playerBounds,
+      WORLD_CONFIG.playerBounds,
       model.position.x,
       model.position.z,
     );
@@ -657,7 +610,7 @@ export class CharacterSystem {
       const directionX = this.playerInput.x / strength;
       const directionZ = this.playerInput.z / strength;
       const step = PLAYER_SPEED * this.playerSpeedMultiplier * strength * delta;
-      const bounds = this.playerBounds;
+      const bounds = WORLD_CONFIG.playerBounds;
       const nextX = THREE.MathUtils.clamp(
         model.position.x + directionX * step,
         bounds.minX,
@@ -714,6 +667,7 @@ export class CharacterSystem {
       if (nextQueueIndex >= CUSTOMER_QUEUE_SLOTS.length) return;
       customer.queueIndex = nextQueueIndex;
       customer.state = 'waiting-to-enter';
+      customer.spawnAt = elapsed + 0.25 + nextQueueIndex * 0.08;
       customer.order = null;
       customer.seatId = null;
       customer.mealUntil = 0;
@@ -726,7 +680,6 @@ export class CharacterSystem {
       customer.routeIndex = 0;
       customer.model.position.x = CUSTOMER_ENTRY_POSITION[0];
       customer.model.position.z = CUSTOMER_ENTRY_POSITION[1];
-      this._scheduleSpawn(customer, elapsed);
       nextQueueIndex += 1;
     });
   }
@@ -737,13 +690,6 @@ export class CharacterSystem {
       const { model, definition } = customer;
       if (customer.state === 'paying') {
         if (elapsed < customer.stateUntil) return;
-        if (customer.takeaway) {
-          customer.state = 'leaving';
-          customer.route = [CUSTOMER_ENTRY_INSIDE, CUSTOMER_ENTRY_POSITION];
-          customer.routeIndex = 0;
-          this.setAnimation(definition.id, 'Carry_Walk_Customer');
-          return;
-        }
         const seat = this.diningSeats.find(({ id }) => id === customer.seatId);
         if (!seat) return;
         customer.state = 'walking-to-seat';
@@ -785,8 +731,6 @@ export class CharacterSystem {
       }
 
       if (customer.state === 'waiting-to-enter') {
-        // Nobody walks into a shop that has no counter yet.
-        if (!this.customerSpawningEnabled) return;
         if (elapsed < customer.spawnAt) return;
         model.visible = true;
         customer.state = 'walking';
@@ -848,7 +792,24 @@ export class CharacterSystem {
     });
   }
 
-  _advanceQueueAfter(servedCustomer) {
+  serveFrontCustomer(elapsed, order) {
+    const servedCustomer = this.getFrontCustomer();
+    if (!servedCustomer) return Object.freeze({ ok: false, reason: 'no-customer' });
+
+    const seat = this.diningSeats.find((candidate) => {
+      const table = this.getDiningTable(candidate.tableId);
+      return candidate.occupiedBy === null && table?.unlocked && table.state === 'clean';
+    });
+    if (!seat) return Object.freeze({ ok: false, reason: 'no-seat' });
+
+    seat.occupiedBy = servedCustomer.definition.id;
+    servedCustomer.queueIndex = -1;
+    servedCustomer.state = 'paying';
+    servedCustomer.stateUntil = elapsed + 1.05;
+    servedCustomer.order = order ?? servedCustomer.order;
+    servedCustomer.seatId = seat.id;
+    this.setAnimation(servedCustomer.definition.id, 'Receive_Order', 0.1);
+
     this.customers.forEach((customer) => {
       if (customer === servedCustomer || customer.state === 'departed' || customer.queueIndex <= 0) return;
       customer.queueIndex -= 1;
@@ -866,44 +827,6 @@ export class CharacterSystem {
       customer.state = 'walking';
       this.setAnimation(customer.definition.id, 'Walk_Customer');
     });
-  }
-
-  serveFrontCustomer(elapsed, order) {
-    const servedCustomer = this.getFrontCustomer();
-    if (!servedCustomer) return Object.freeze({ ok: false, reason: 'no-customer' });
-
-    const seat = this.diningSeats.find((candidate) => {
-      const table = this.getDiningTable(candidate.tableId);
-      return candidate.occupiedBy === null && table?.unlocked && table.state === 'clean';
-    });
-
-    if (!seat) {
-      // Seating is always a bonus, never a gate. When it gated service, buying the first
-      // table dropped throughput from 12.5 customers/min to 0.8 — the shop spent 93% of
-      // its time parked in waiting-for-table behind two seats and a dirty table, so a
-      // $150 "upgrade" made the business 15x worse. Now anyone who cannot get a clean
-      // seat simply takes their order to go at base price, and seats earn a dine-in bonus
-      // on top. More seats and cleaner tables mean more money, never less throughput.
-      servedCustomer.queueIndex = -1;
-      servedCustomer.state = 'paying';
-      servedCustomer.stateUntil = elapsed + 1.05;
-      servedCustomer.order = order ?? servedCustomer.order;
-      servedCustomer.seatId = null;
-      servedCustomer.takeaway = true;
-      this.setAnimation(servedCustomer.definition.id, 'Receive_Order', 0.1);
-      this._advanceQueueAfter(servedCustomer);
-      return Object.freeze({ ok: true, customer: servedCustomer, seatId: null, takeaway: true });
-    }
-
-    seat.occupiedBy = servedCustomer.definition.id;
-    servedCustomer.queueIndex = -1;
-    servedCustomer.state = 'paying';
-    servedCustomer.stateUntil = elapsed + 1.05;
-    servedCustomer.order = order ?? servedCustomer.order;
-    servedCustomer.seatId = seat.id;
-    servedCustomer.takeaway = false;
-    this.setAnimation(servedCustomer.definition.id, 'Receive_Order', 0.1);
-    this._advanceQueueAfter(servedCustomer);
 
     return Object.freeze({ ok: true, customer: servedCustomer, seatId: seat.id });
   }

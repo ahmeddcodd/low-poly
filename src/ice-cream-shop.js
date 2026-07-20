@@ -137,68 +137,37 @@ export async function createIceCreamShop(onProgress) {
   const colliders = createFurnitureColliders(group, collisionMeshes);
 
   const instancesById = new Map(instances.map((instance) => [instance.userData.furnitureId, instance]));
-  const visibleFurniture = new Set();
-
-  // Every AABB above was measured at the piece's final placement, and visibility does not
-  // affect Box3.setFromObject — so "not yet built" is just visible=false plus a disabled
-  // collider. That is what lets the shop open completely empty without any deferred
-  // construction or collider rebuilding.
-  const applyVisibility = (furnitureId, visible) => {
-    const instance = instancesById.get(furnitureId);
-    if (instance) instance.visible = visible;
-    colliders
-      .filter((collider) => collider.furnitureId === furnitureId)
-      .forEach((collider) => { collider.enabled = visible; });
-    return instance ?? null;
-  };
-
-  // A dining-set id names a group (table plus its chairs); everything else is its own piece.
-  const expandIds = (ids) => {
-    const expanded = new Set();
-    ids.forEach((id) => {
-      const group = DINING_FURNITURE_IDS[id];
-      if (group) group.forEach((memberId) => expanded.add(memberId));
-      else expanded.add(id);
+  const unlockedDiningTables = new Set();
+  const setTableVisibility = (tableId, visible) => {
+    const furnitureIds = DINING_FURNITURE_IDS[tableId] ?? [];
+    furnitureIds.forEach((furnitureId) => {
+      const instance = instancesById.get(furnitureId);
+      if (instance) instance.visible = visible;
+      colliders.filter((collider) => collider.furnitureId === furnitureId)
+        .forEach((collider) => { collider.enabled = visible; });
     });
-    return expanded;
+    if (visible) unlockedDiningTables.add(tableId);
+    else unlockedDiningTables.delete(tableId);
+    return furnitureIds.map((id) => instancesById.get(id)).filter(Boolean);
   };
-
-  /**
-   * Replace the visible set wholesale. Idempotent, so the build system can call it after
-   * every purchase and on save-load without tracking what changed.
-   * @returns the instances that became visible on this call, for the reveal animation.
-   */
-  const setVisibleFurniture = (ids) => {
-    const next = expandIds(ids);
-    const revealed = [];
-    instancesById.forEach((instance, furnitureId) => {
-      const visible = next.has(furnitureId);
-      if (visible && !visibleFurniture.has(furnitureId)) revealed.push(instance);
-      applyVisibility(furnitureId, visible);
+  const setUnlockedDiningTables = (tableIds) => {
+    const nextUnlocked = new Set(tableIds);
+    Object.keys(DINING_FURNITURE_IDS).forEach((tableId) => {
+      setTableVisibility(tableId, nextUnlocked.has(tableId));
     });
-    visibleFurniture.clear();
-    next.forEach((id) => { if (instancesById.has(id)) visibleFurniture.add(id); });
-    return revealed;
   };
-
-  // The shop starts completely bare — the player buys the counter before anything else.
-  setVisibleFurniture([]);
+  setUnlockedDiningTables(['compact-table']);
 
   return {
     group,
     instances: Object.freeze(instances),
     colliders,
-    get visibleFurnitureIds() {
-      return [...visibleFurniture];
-    },
     get unlockedDiningTableIds() {
-      return Object.keys(DINING_FURNITURE_IDS).filter(
-        (tableId) => DINING_FURNITURE_IDS[tableId].every((id) => visibleFurniture.has(id)),
-      );
+      return [...unlockedDiningTables];
     },
-    setVisibleFurniture,
-    getFurnitureInstance(furnitureId) {
-      return instancesById.get(furnitureId) ?? null;
+    setUnlockedDiningTables,
+    unlockDiningTable(tableId) {
+      return setTableVisibility(tableId, true);
     },
     dispose() {
       disposeFurniture(group);

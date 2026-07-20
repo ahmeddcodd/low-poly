@@ -3,9 +3,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { WORLD_CONFIG } from './config.js';
 import { createCharacterSystem } from './character-system.js';
 import { createIceCreamShop } from './ice-cream-shop.js';
-import { BuildSystem } from './build-system.js';
+import { ShopProgressionSystem } from './progression-system.js';
 import { createIceCreamProduction } from './ice-cream-production.js';
-import { COLD_OPEN, STARTING_CASH } from './tuning.js';
 
 const MODEL_URL = new URL('../Untitled.glb', import.meta.url).href;
 const WALL_COLLIDER_PATTERN = /^Wall_.+_Solid_\d+$/;
@@ -74,50 +73,16 @@ function createWallColliders(root) {
   return Object.freeze(colliders);
 }
 
-// The doorway gap in the south wall, between Wall_Main_South_Solid_00 and _01.
-const DOORWAY = Object.freeze({ x: -2.5, z: 7.5, radius: 3.2 });
-
-/**
- * Automatic entrance doors. They used to swing open once at boot, which meant that during
- * the cold open the player walked straight through a shut door. Now they open whenever
- * somebody is close enough to actually walk through, and close again behind them.
- *
- * The clip is scrubbed by hand rather than played, because it has to run backwards too and
- * an AnimationAction with a negative timeScale will not clamp cleanly at both ends.
- */
-function createEntranceDoors(root, animations) {
+function startEntranceAnimation(root, animations) {
   const clip = animations.find((animation) => animation.name === 'Entrance_Open');
-  if (!clip) return { mixer: null, update() {} };
+  if (!clip) return null;
 
   const mixer = new THREE.AnimationMixer(root);
   const action = mixer.clipAction(clip);
   action.setLoop(THREE.LoopOnce, 1);
   action.clampWhenFinished = true;
-  action.play();
-  action.paused = true;
-  action.time = 0;
-
-  let openAmount = 0;
-  const nearDoorway = (position) => {
-    const deltaX = position.x - DOORWAY.x;
-    const deltaZ = position.z - DOORWAY.z;
-    return deltaX * deltaX + deltaZ * deltaZ <= DOORWAY.radius * DOORWAY.radius;
-  };
-
-  return {
-    mixer,
-    update(delta, watchers) {
-      const wantsOpen = watchers.some(nearDoorway);
-      const target = wantsOpen ? 1 : 0;
-      // ~0.45s to swing either way.
-      const step = delta / 0.45;
-      openAmount = target > openAmount
-        ? Math.min(target, openAmount + step)
-        : Math.max(target, openAmount - step);
-      action.time = openAmount * clip.duration;
-      mixer.update(0);
-    },
-  };
+  action.reset().play();
+  return mixer;
 }
 
 function applyLocalDebugStart(characterSystem) {
@@ -185,28 +150,13 @@ export async function createRestaurantScene(scene, onProgress) {
   const wallColliders = createWallColliders(restaurant);
   world.add(characterSystem.group);
   iceCreamProduction.bindCharacterSystem(characterSystem);
-  const buildSystem = new BuildSystem({
-    shop: iceCreamShop,
-    production: iceCreamProduction,
-    characters: characterSystem,
-    hiring: iceCreamProduction.hiringSystem,
-    supportsScene: iceCreamProduction.supportsScene,
-  });
-  world.add(buildSystem.group);
-  iceCreamProduction.bindBuildSystem(buildSystem);
-
-  // Cold open: the player starts on the pavement outside a bare shop with the opening
-  // balance in hand. The bound is relaxed only until they are properly inside, so nobody
-  // wanders back onto the grass mid-game.
-  iceCreamProduction.cash = STARTING_CASH;
-  characterSystem.setPlayerBounds({ maxZ: COLD_OPEN.outdoorMaxZ });
-  if (characterSystem.player) {
-    characterSystem.player.model.position.x = COLD_OPEN.playerStart[0];
-    characterSystem.player.model.position.z = COLD_OPEN.playerStart[1];
-    characterSystem.playerMarker.position.set(COLD_OPEN.playerStart[0], 0.055, COLD_OPEN.playerStart[1]);
-  }
-  let boundsTightened = false;
-
+  const progressionSystem = new ShopProgressionSystem(
+    iceCreamShop,
+    iceCreamProduction,
+    characterSystem,
+  );
+  world.add(progressionSystem.group);
+  iceCreamProduction.bindProgressionSystem(progressionSystem);
   applyLocalDebugStart(characterSystem);
   const playerColliders = Object.freeze([
     ...wallColliders,
@@ -215,8 +165,7 @@ export async function createRestaurantScene(scene, onProgress) {
     ...iceCreamProduction.interactionColliders,
   ]);
   characterSystem.setPlayerColliders(playerColliders);
-  const entranceDoors = createEntranceDoors(restaurant, gltf.animations);
-  const doorWatchers = [];
+  const mixer = startEntranceAnimation(restaurant, gltf.animations);
   const bounds = new THREE.Box3().setFromObject(restaurant);
   const size = bounds.getSize(new THREE.Vector3());
 
@@ -227,9 +176,7 @@ export async function createRestaurantScene(scene, onProgress) {
     restaurant,
     iceCreamShop,
     iceCreamProduction,
-    buildSystem,
-    // Kept so main.js's HUD sync keeps working against the same shape.
-    progressionSystem: buildSystem,
+    progressionSystem,
     characterSystem,
     wallColliders,
     furnitureColliders: iceCreamShop.colliders,
@@ -239,30 +186,19 @@ export async function createRestaurantScene(scene, onProgress) {
     bounds,
     size,
     update(delta, elapsed) {
+      mixer?.update(delta);
       characterSystem.update(delta, elapsed);
       iceCreamProduction.update(delta, elapsed);
       iceCreamProduction.updateHiring(delta, elapsed);
-      const playerPosition = characterSystem.player.model.position;
-      buildSystem.update(delta, elapsed, playerPosition);
-
-      // The doors react to anyone who could actually walk through them.
-      doorWatchers.length = 0;
-      doorWatchers.push(playerPosition);
-      characterSystem.customers.forEach((customer) => {
-        if (customer.model.visible) doorWatchers.push(customer.model.position);
-      });
-      entranceDoors.update(delta, doorWatchers);
-
-      // Close the outdoor bound behind the player rather than on a timer, so they are
-      // never clamp-teleported mid-stride through the doorway.
-      if (!boundsTightened && playerPosition.z <= 6.8) {
-        boundsTightened = true;
-        characterSystem.setPlayerBounds({ maxZ: COLD_OPEN.indoorMaxZ });
-      }
+      progressionSystem.update(
+        delta,
+        elapsed,
+        characterSystem.player.model.position,
+      );
     },
     dispose() {
-      entranceDoors.mixer?.stopAllAction();
-      buildSystem.dispose();
+      mixer?.stopAllAction();
+      progressionSystem.dispose();
       iceCreamProduction.dispose();
       iceCreamShop.dispose();
       characterSystem.dispose();

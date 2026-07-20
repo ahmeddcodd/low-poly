@@ -3,10 +3,6 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { WORLD_CONFIG } from './config.js';
 import { TableCleanupSystem } from './table-cleanup-system.js';
 import { HiringSystem } from './hiring-system.js';
-import { DINE_IN_BONUS } from './tuning.js';
-import {
-  ALL_PRODUCT_NODES, RECIPES, priceOrder, recipeLabel, resolveProductNode, rollOrder,
-} from './recipes.js';
 
 const MACHINE_DEFINITIONS = Object.freeze([
   Object.freeze({
@@ -46,6 +42,7 @@ const CASH_POINT = Object.freeze([6.05, 0.08, -0.05]);
 const INTERACTION_RADIUS = 0.82;
 const CASH_PICKUP_RADIUS = 1;
 const MAX_CASH_BILLS = 24;
+const STORY_SERVICE_GOAL = 22;
 const ORDER_FLAVOR_COLORS = Object.freeze({
   vanilla: '#ffe7a0',
   strawberry: '#ff7690',
@@ -334,23 +331,13 @@ function createOrderBubble(order) {
     context.stroke();
   }
 
-  // Multi-scoop names ("VANILLA + MINT") do not fit the bubble, so the headline stays the
-  // recipe and the flavours go on the second line.
-  const recipe = RECIPES[order.recipeId];
-  const headline = recipe && recipe.scoops > 1
-    ? recipe.label.toUpperCase()
-    : (ORDER_FLAVOR_LABELS[order.flavor] ?? order.flavor.toUpperCase());
-  const detail = recipe && recipe.scoops > 1
-    ? recipeLabel(order)
-    : `${order.container.toUpperCase()}  •  1`;
-
   context.textAlign = 'center';
   context.fillStyle = '#ffffff';
   context.font = '900 35px Arial, sans-serif';
-  context.fillText(headline, 241, 62);
+  context.fillText(ORDER_FLAVOR_LABELS[order.flavor], 241, 62);
   context.fillStyle = '#d8ffd2';
-  context.font = `800 ${detail.length > 16 ? 21 : 27}px Arial, sans-serif`;
-  context.fillText(detail, 241, 108);
+  context.font = '800 27px Arial, sans-serif';
+  context.fillText(`${order.container.toUpperCase()}  •  1`, 241, 108);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -501,9 +488,8 @@ export class IceCreamProductionSystem {
     this.customerProducts = new Map();
     this.customerGripWorldQuaternion = new THREE.Quaternion();
     this.customerModelWorldQuaternion = new THREE.Quaternion();
+    this.progressionSystem = null;
     this.unlockedFlavors = new Set();
-    this.unlockedSupports = new Set();
-    this.buildSystem = null;
     this.tableCleanup = null;
     this.hiringSystem = null;
     this.interactionColliders = Object.freeze([]);
@@ -524,11 +510,7 @@ export class IceCreamProductionSystem {
     this.group.add(this.cashMarker);
     this._buildStations();
     this._buildCarryRig();
-    // The shop opens bare. The build system pushes the real owned set down immediately
-    // after construction, and again after every purchase.
-    this.menuBonuses = new Map();
-    this.setUnlockedFlavors([]);
-    this.setUnlockedSupports([]);
+    this.setUnlockedFlavors(['vanilla', 'strawberry']);
   }
 
   _buildStations() {
@@ -573,13 +555,12 @@ export class IceCreamProductionSystem {
     configureObject(tray);
     this.carryRig.add(tray);
 
-    // Every recipe the menu can ever produce, not just single scoops — doubles and the
-    // sundae have to be preloaded too or resolveProductNode would ask for a clone that
-    // was never made.
     const carryNames = new Set([
       PRODUCT_NAMES.cone,
       PRODUCT_NAMES.cup,
-      ...ALL_PRODUCT_NODES,
+      ...Object.values(PRODUCT_NAMES)
+        .filter((value) => typeof value === 'object')
+        .flatMap((value) => Object.values(value)),
     ]);
 
     carryNames.forEach((name) => {
@@ -607,6 +588,10 @@ export class IceCreamProductionSystem {
       ...this.tableCleanup.colliders,
       ...this.hiringSystem.colliders,
     ]);
+  }
+
+  bindProgressionSystem(progressionSystem) {
+    this.progressionSystem = progressionSystem;
   }
 
   get unlockedFlavorIds() {
@@ -638,86 +623,6 @@ export class IceCreamProductionSystem {
     nextFlavors.add(flavor);
     this.setUnlockedFlavors(nextFlavors);
     return machine.model;
-  }
-
-  bindBuildSystem(buildSystem) {
-    this.buildSystem = buildSystem;
-  }
-
-  /**
-   * Which finishing station an order should visit, or null when the shop has not built
-   * one yet. Cups want the spoon/wafer dispenser, cones want toppings; either may be
-   * missing for most of the early game.
-   */
-  /**
-   * Between orders, tell the player what to do next rather than leaving a stale
-   * "Customer approaching" on screen. Uncollected cash comes first — it is the one thing
-   * that blocks every purchase.
-   */
-  _showIdleGuidance() {
-    if (this.pendingCash > 0) {
-      this._setStatus('Collect your cash', `$${this.pendingCash} is waiting by the counter`);
-      return;
-    }
-    const guidance = this.buildSystem?.guidance;
-    if (guidance) {
-      this._setStatus(guidance.title, guidance.detail);
-      return;
-    }
-    this._setStatus('Customer approaching', 'The next guest is walking to the order counter');
-  }
-
-  _finishStationFor(order) {
-    const preferred = order.container === 'cup' ? 'spoon' : 'topping';
-    const stations = this.unlockedStationKeys;
-    if (stations.has(preferred) && this.stationPoints.has(preferred)) return preferred;
-    return null;
-  }
-
-  getMachineModel(flavor) {
-    return this.machines.find((candidate) => candidate.flavor === flavor)?.model ?? null;
-  }
-
-  getSupportModel(supportId) {
-    return this.supports.find(({ definition }) => definition.id === supportId)?.model ?? null;
-  }
-
-  get unlockedSupportIds() {
-    return [...this.unlockedSupports];
-  }
-
-  /** Station keys ('cone', 'cup', 'topping', 'spoon') the shop can currently use. */
-  get unlockedStationKeys() {
-    return new Set(
-      this.supports
-        .filter(({ definition }) => definition.station && this.unlockedSupports.has(definition.id))
-        .map(({ definition }) => definition.station),
-    );
-  }
-
-  /**
-   * Mirror of setUnlockedFlavors for the prep stations, so the shop can start with no
-   * dispensers at all. Idempotent set-replacement — the build system recomputes and calls
-   * this after every purchase rather than toggling individual stations.
-   */
-  setUnlockedSupports(supportIds) {
-    this.unlockedSupports = new Set(supportIds);
-    this.supports.forEach(({ definition, model }) => {
-      const unlocked = this.unlockedSupports.has(definition.id);
-      model.visible = unlocked;
-      this.colliders
-        .filter(({ productionAssetId }) => productionAssetId === definition.id)
-        .forEach((collider) => { collider.enabled = unlocked; });
-      if (!unlocked && definition.station) {
-        const marker = this.markers.get(`station-${definition.station}`);
-        if (marker) marker.visible = false;
-      }
-    });
-  }
-
-  /** Per-recipe price bonuses from decorative purchases (syrup bottles, etc.). */
-  setMenuBonuses(bonuses) {
-    this.menuBonuses = bonuses ?? new Map();
   }
 
   _setCarryProduct(productName) {
@@ -753,8 +658,7 @@ export class IceCreamProductionSystem {
   }
 
   _showCustomerProduct(customer, order) {
-    const productName = resolveProductNode(order);
-    if (!productName) return;
+    const productName = PRODUCT_NAMES[order.flavor][order.container];
     const product = cloneAsset(this.productsScene, productName);
     const gripBone = customer.model.getObjectByName('RightHandProp');
     if (!gripBone) throw new Error(`Missing right-hand prop socket for ${customer.definition.id}`);
@@ -872,24 +776,15 @@ export class IceCreamProductionSystem {
 
   _completeService(service, elapsed) {
     const order = this.activeOrder;
+    const basePayment = order.container === 'cup' ? 20 : 15;
     const profitMultiplier = this.hiringSystem?.profitMultiplier ?? 1;
-    // Customers who got a clean seat are worth more than takeaway. This is what the
-    // player actually feels when they buy a table.
-    const dineIn = service.seatId ? DINE_IN_BONUS : 1;
-    const payment = priceOrder(order, {
-      menuBonuses: this.menuBonuses,
-      tipMultiplier: dineIn,
-      profitMultiplier,
-    });
+    const payment = basePayment * profitMultiplier;
     this._hideOrderBubble(service.customer);
     this._showCustomerProduct(service.customer, order);
     this._clearCarryProduct();
     this.characterSystem.setPlayerCarrying(false);
     this._addPendingCash(payment);
     this.servedCount += 1;
-    // Stars are the second progression axis: cash decides what you can afford, stars
-    // decide what is even offered. Patience tiers will scale this in the economy pass.
-    this.buildSystem?.addStars(1);
     this.activeOrder = null;
     this.stage = 'waiting';
     this.nextOrderAt = elapsed + 0.55;
@@ -930,23 +825,11 @@ export class IceCreamProductionSystem {
   }
 
   _startOrder() {
-    // Weighted toward the richest recipe the shop can currently make, so the average
-    // ticket climbs as the menu grows instead of staying flat forever.
-    const rolled = rollOrder({
-      flavors: new Set(this.unlockedFlavorIds),
-      stations: this.unlockedStationKeys,
-    });
-    if (!rolled) return false;
-
-    // `flavor` is the scoop currently being made. Single-scoop recipes never advance it;
-    // doubles walk the player to a second machine. Keeping the field means every existing
-    // marker lookup and status string keeps working unchanged.
-    const order = {
-      ...rolled,
-      scoopIndex: 0,
-      flavor: rolled.flavors[0],
-    };
-    const container = order.container;
+    const unlockedFlavors = this.unlockedFlavorIds;
+    if (unlockedFlavors.length === 0) return false;
+    const flavor = unlockedFlavors[this.servedCount % unlockedFlavors.length];
+    const container = this.servedCount % 2 === 0 ? 'cone' : 'cup';
+    const order = Object.freeze({ flavor, container });
     const customer = this.characterSystem.assignFrontCustomerOrder(order);
     if (!customer) return false;
     this.activeOrder = order;
@@ -955,7 +838,7 @@ export class IceCreamProductionSystem {
     this._setTargetMarker(`station-${container}`);
     this._setStatus(
       `Pick up a ${container}`,
-      `Walk to the glowing ${container} dispenser for the ${recipeLabel(order).toLowerCase()} order`,
+      `Walk to the glowing ${container} dispenser for the ${flavor} order`,
     );
     return true;
   }
@@ -1060,14 +943,62 @@ export class IceCreamProductionSystem {
     if (this._handleTableCleanup(elapsed, playerPosition)) return;
 
     if (this.stage === 'waiting') {
+      if (this.progressionSystem?.complete && this.servedCount >= STORY_SERVICE_GOAL) {
+        this.characterSystem.setCustomerReturnsEnabled(false);
+        this._setTargetMarker(null);
+        const allDeparted = this.characterSystem.customers.every(({ state }) => state === 'departed');
+        if (allDeparted) {
+          if (this.characterSystem.dirtyTableCount > 0) {
+            this._setStatus(
+              'Clean the remaining dining tables',
+              `${this.characterSystem.dirtyTableCount} table${this.characterSystem.dirtyTableCount === 1 ? '' : 's'} must be cleaned before closing`,
+            );
+          } else {
+            this.stage = 'complete';
+            this._setStatus(
+              this.pendingCash > 0 ? 'Collect the final cash stack' : 'Ice cream rush complete!',
+              this.pendingCash > 0
+                ? `$${this.pendingCash} is waiting on the left side of the counter`
+                : `${this.servedCount} customers served successfully`,
+            );
+          }
+        } else if (this.characterSystem.cleanableTableCount > 0) {
+          this._setStatus(
+            'A dining table needs cleaning',
+            'Pick up the glowing garbage, then carry it to the green trash bin',
+          );
+        } else {
+          this._setStatus(
+            'Customers are enjoying their ice cream',
+            `${this.characterSystem.activeDiningCount} guests are seated or heading to a table`,
+          );
+        }
+        return;
+      }
+
       if (elapsed < this.nextOrderAt) return;
       const frontCustomer = this.characterSystem.customers.find((customer) => customer.state === 'ordering');
       if (frontCustomer) {
         this._startOrder();
       } else {
         this._setTargetMarker(null);
-        this._showIdleGuidance();
+        this._setStatus('Customer approaching', 'The next guest is walking to the order counter');
       }
+      return;
+    }
+
+    if (this.stage === 'waiting-for-table') {
+      if (this.characterSystem.availableSeatCount <= 0) {
+        this._setStatus(
+          this.characterSystem.cleanableTableCount > 0 ? 'Clean a table for this customer' : 'Waiting for diners to finish',
+          this.characterSystem.cleanableTableCount > 0
+            ? 'Pick up the glowing garbage and throw it in the green trash bin'
+            : 'The completed order is safe at the counter until a table becomes cleanable',
+        );
+        return;
+      }
+      const service = this.characterSystem.serveFrontCustomer(elapsed, this.activeOrder);
+      if (service.ok) this._completeService(service, elapsed);
       return;
     }
 
@@ -1101,50 +1032,21 @@ export class IceCreamProductionSystem {
 
     if (this.stage === 'dispensing') {
       if (elapsed < this.dispenseReadyAt) return;
-      const order = this.activeOrder;
-
-      // A double scoop needs a second machine. Send the player on before finishing.
-      if (order.scoopIndex + 1 < order.flavors.length) {
-        order.scoopIndex += 1;
-        order.flavor = order.flavors[order.scoopIndex];
-        this.stage = 'need-machine';
-        this._setTargetMarker(`machine-${order.flavor}`);
-        this._setStatus(
-          `Add a ${order.flavor} scoop`,
-          `This is a double — take it to the glowing ${order.flavor} machine`,
-        );
-        return;
-      }
-
-      const productName = resolveProductNode(order);
-      if (productName) this._setCarryProduct(productName);
-
-      // The finishing station is optional — early on there is no topping station or spoon
-      // dispenser at all. Sending the player to one that has not been built yet is an
-      // unwinnable instruction, so skip straight to serving instead.
-      const finishStation = this._finishStationFor(this.activeOrder);
-      if (!finishStation) {
-        this.stage = 'need-serve';
-        this._setTargetMarker('serve');
-        this._setStatus(
-          `Serve the ${this.activeOrder.flavor} ${this.activeOrder.container}`,
-          'Take it to the glowing spot behind the counter',
-        );
-        return;
-      }
-
+      const productName = PRODUCT_NAMES[this.activeOrder.flavor][this.activeOrder.container];
+      this._setCarryProduct(productName);
       this.stage = 'need-finish';
+      const finishStation = this.activeOrder.container === 'cup' ? 'spoon' : 'topping';
       this._setTargetMarker(`station-${finishStation}`);
       this._setStatus(
-        finishStation === 'spoon' ? 'Add a spoon and wafer' : 'Add the finishing topping',
+        this.activeOrder.container === 'cup' ? 'Add a spoon and wafer' : 'Add the finishing topping',
         `Walk to the glowing ${finishStation === 'spoon' ? 'spoon dispenser' : 'topping station'}`,
       );
       return;
     }
 
     if (this.stage === 'need-finish') {
-      const finishStation = this._finishStationFor(this.activeOrder);
-      const stationPoint = finishStation ? this.stationPoints.get(finishStation) : null;
+      const finishStation = this.activeOrder.container === 'cup' ? 'spoon' : 'topping';
+      const stationPoint = this.stationPoints.get(finishStation);
       if (!stationPoint || !this._near(playerPosition, stationPoint)) return;
       this.characterSystem.playPlayerAction('Pickup');
       this.stage = 'need-serve';
@@ -1169,9 +1071,21 @@ export class IceCreamProductionSystem {
     }
 
     if (this.stage === 'serving' && elapsed >= this.serveReadyAt) {
-      // Only 'no-customer' can fail now — seating never blocks a serve.
       const service = this.characterSystem.serveFrontCustomer(elapsed, this.activeOrder);
-      if (!service.ok) return;
+      if (!service.ok) {
+        if (service.reason === 'no-seat') {
+          this._clearCarryProduct();
+          this.characterSystem.setPlayerCarrying(false);
+          this.stage = 'waiting-for-table';
+          this._setStatus(
+            this.characterSystem.cleanableTableCount > 0 ? 'Clean a table to free seats' : 'Waiting for a free table',
+            this.characterSystem.cleanableTableCount > 0
+              ? 'Pick up the glowing table garbage and throw it in the trash bin'
+              : 'The completed order is waiting safely at the counter',
+          );
+        }
+        return;
+      }
       this._completeService(service, elapsed);
     }
   }

@@ -19,7 +19,7 @@ const UPGRADE_DEFINITIONS = Object.freeze([
     title: 'Hire more workers',
     detail: 'Adds another active ice cream worker',
     maxLevel: MAX_WORKER_LEVEL,
-    costs: Object.freeze([180, 280, 400, 560]),
+    costs: Object.freeze([30, 45, 65, 90]),
   }),
   Object.freeze({
     id: 'worker-speed',
@@ -27,7 +27,7 @@ const UPGRADE_DEFINITIONS = Object.freeze([
     title: 'Worker speed',
     detail: 'Makes every hired worker move and work faster',
     maxLevel: MAX_WORKER_LEVEL,
-    costs: Object.freeze([150, 240, 360, 510]),
+    costs: Object.freeze([25, 40, 60, 85]),
   }),
   Object.freeze({
     id: 'wc-boost',
@@ -35,7 +35,7 @@ const UPGRADE_DEFINITIONS = Object.freeze([
     title: 'Player + profit',
     detail: 'Boosts player speed and doubles every payment',
     maxLevel: 1,
-    costs: Object.freeze([400]),
+    costs: Object.freeze([60]),
   }),
 ]);
 
@@ -56,7 +56,7 @@ const HIRE_DEFINITIONS = Object.freeze([
     roomLabel: 'HR OFFICE',
     hireLabel: 'HIRE HR',
     title: 'HR manager',
-    cost: 400,
+    cost: 60,
     padPosition: Object.freeze([13.7, 0.04, -3]),
     chairPosition: Object.freeze([15.3, 0.02, -3]),
     chairColor: 0xf0a48d,
@@ -67,7 +67,7 @@ const HIRE_DEFINITIONS = Object.freeze([
     roomLabel: 'GENERAL OFFICE',
     hireLabel: 'HIRE GENERAL MANAGER',
     title: 'General manager',
-    cost: 800,
+    cost: 80,
     padPosition: Object.freeze([13.7, 0.04, 3]),
     chairPosition: Object.freeze([15.3, 0.02, 3]),
     chairColor: 0x8bd7c5,
