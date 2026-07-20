@@ -3,8 +3,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { WORLD_CONFIG } from './config.js';
 import { createCharacterSystem } from './character-system.js';
 import { createIceCreamShop } from './ice-cream-shop.js';
-import { ShopProgressionSystem } from './progression-system.js';
+import { BuildSystem } from './build-system.js';
 import { createIceCreamProduction } from './ice-cream-production.js';
+import { COLD_OPEN, STARTING_CASH } from './tuning.js';
 
 const MODEL_URL = new URL('../Untitled.glb', import.meta.url).href;
 const WALL_COLLIDER_PATTERN = /^Wall_.+_Solid_\d+$/;
@@ -73,16 +74,29 @@ function createWallColliders(root) {
   return Object.freeze(colliders);
 }
 
-function startEntranceAnimation(root, animations) {
+/**
+ * The entrance doors used to swing open at boot. They now stay shut through the cold open
+ * and swing on the frame the shop can first serve a customer — the payoff beat for the
+ * opening purchase chain.
+ */
+function createEntranceDoors(root, animations) {
   const clip = animations.find((animation) => animation.name === 'Entrance_Open');
-  if (!clip) return null;
+  if (!clip) return { mixer: null, open() {} };
 
   const mixer = new THREE.AnimationMixer(root);
   const action = mixer.clipAction(clip);
   action.setLoop(THREE.LoopOnce, 1);
   action.clampWhenFinished = true;
-  action.reset().play();
-  return mixer;
+  let opened = false;
+
+  return {
+    mixer,
+    open() {
+      if (opened) return;
+      opened = true;
+      action.reset().play();
+    },
+  };
 }
 
 function applyLocalDebugStart(characterSystem) {
@@ -150,13 +164,28 @@ export async function createRestaurantScene(scene, onProgress) {
   const wallColliders = createWallColliders(restaurant);
   world.add(characterSystem.group);
   iceCreamProduction.bindCharacterSystem(characterSystem);
-  const progressionSystem = new ShopProgressionSystem(
-    iceCreamShop,
-    iceCreamProduction,
-    characterSystem,
-  );
-  world.add(progressionSystem.group);
-  iceCreamProduction.bindProgressionSystem(progressionSystem);
+  const buildSystem = new BuildSystem({
+    shop: iceCreamShop,
+    production: iceCreamProduction,
+    characters: characterSystem,
+    hiring: iceCreamProduction.hiringSystem,
+    supportsScene: iceCreamProduction.supportsScene,
+  });
+  world.add(buildSystem.group);
+  iceCreamProduction.bindBuildSystem(buildSystem);
+
+  // Cold open: the player starts on the pavement outside a bare shop with the opening
+  // balance in hand. The bound is relaxed only until they are properly inside, so nobody
+  // wanders back onto the grass mid-game.
+  iceCreamProduction.cash = STARTING_CASH;
+  characterSystem.setPlayerBounds({ maxZ: COLD_OPEN.outdoorMaxZ });
+  if (characterSystem.player) {
+    characterSystem.player.model.position.x = COLD_OPEN.playerStart[0];
+    characterSystem.player.model.position.z = COLD_OPEN.playerStart[1];
+    characterSystem.playerMarker.position.set(COLD_OPEN.playerStart[0], 0.055, COLD_OPEN.playerStart[1]);
+  }
+  let boundsTightened = false;
+
   applyLocalDebugStart(characterSystem);
   const playerColliders = Object.freeze([
     ...wallColliders,
@@ -165,7 +194,8 @@ export async function createRestaurantScene(scene, onProgress) {
     ...iceCreamProduction.interactionColliders,
   ]);
   characterSystem.setPlayerColliders(playerColliders);
-  const mixer = startEntranceAnimation(restaurant, gltf.animations);
+  const entranceDoors = createEntranceDoors(restaurant, gltf.animations);
+  buildSystem.onShopOpen = () => entranceDoors.open();
   const bounds = new THREE.Box3().setFromObject(restaurant);
   const size = bounds.getSize(new THREE.Vector3());
 
@@ -176,7 +206,9 @@ export async function createRestaurantScene(scene, onProgress) {
     restaurant,
     iceCreamShop,
     iceCreamProduction,
-    progressionSystem,
+    buildSystem,
+    // Kept so main.js's HUD sync keeps working against the same shape.
+    progressionSystem: buildSystem,
     characterSystem,
     wallColliders,
     furnitureColliders: iceCreamShop.colliders,
@@ -186,19 +218,23 @@ export async function createRestaurantScene(scene, onProgress) {
     bounds,
     size,
     update(delta, elapsed) {
-      mixer?.update(delta);
+      entranceDoors.mixer?.update(delta);
       characterSystem.update(delta, elapsed);
       iceCreamProduction.update(delta, elapsed);
       iceCreamProduction.updateHiring(delta, elapsed);
-      progressionSystem.update(
-        delta,
-        elapsed,
-        characterSystem.player.model.position,
-      );
+      const playerPosition = characterSystem.player.model.position;
+      buildSystem.update(delta, elapsed, playerPosition);
+
+      // Close the outdoor bound behind the player rather than on a timer, so they are
+      // never clamp-teleported mid-stride through the doorway.
+      if (!boundsTightened && playerPosition.z <= 6.8) {
+        boundsTightened = true;
+        characterSystem.setPlayerBounds({ maxZ: COLD_OPEN.indoorMaxZ });
+      }
     },
     dispose() {
-      mixer?.stopAllAction();
-      progressionSystem.dispose();
+      entranceDoors.mixer?.stopAllAction();
+      buildSystem.dispose();
       iceCreamProduction.dispose();
       iceCreamShop.dispose();
       characterSystem.dispose();

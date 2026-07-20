@@ -385,7 +385,10 @@ export class CharacterSystem {
       occupiedBy: null,
     }));
     this.customerReturnsEnabled = true;
+    // Held shut through the cold open; the build system opens it once the shop can serve.
+    this.customerSpawningEnabled = false;
     this.customerVisitCount = 0;
+    this.playerBounds = { ...WORLD_CONFIG.playerBounds };
     this.playerMarker = createPlayerMarker();
     this.group.add(this.playerMarker);
   }
@@ -474,6 +477,15 @@ export class CharacterSystem {
     this.customerReturnsEnabled = Boolean(enabled);
   }
 
+  setCustomerSpawningEnabled(enabled) {
+    this.customerSpawningEnabled = Boolean(enabled);
+  }
+
+  /** Relaxed during the cold open so the player can start on the pavement outside. */
+  setPlayerBounds(bounds) {
+    this.playerBounds = { ...this.playerBounds, ...bounds };
+  }
+
   setPlayerCarrying(carrying) {
     this.playerCarrying = carrying;
     if (!this.player || this.elapsed < this.playerActionUntil) return;
@@ -504,7 +516,7 @@ export class CharacterSystem {
 
     const safePoint = findNearestClearPoint(
       this.playerColliders,
-      WORLD_CONFIG.playerBounds,
+      this.playerBounds,
       model.position.x,
       model.position.z,
     );
@@ -610,7 +622,7 @@ export class CharacterSystem {
       const directionX = this.playerInput.x / strength;
       const directionZ = this.playerInput.z / strength;
       const step = PLAYER_SPEED * this.playerSpeedMultiplier * strength * delta;
-      const bounds = WORLD_CONFIG.playerBounds;
+      const bounds = this.playerBounds;
       const nextX = THREE.MathUtils.clamp(
         model.position.x + directionX * step,
         bounds.minX,
@@ -731,6 +743,8 @@ export class CharacterSystem {
       }
 
       if (customer.state === 'waiting-to-enter') {
+        // Nobody walks into a shop that has no counter yet.
+        if (!this.customerSpawningEnabled) return;
         if (elapsed < customer.spawnAt) return;
         model.visible = true;
         customer.state = 'walking';
