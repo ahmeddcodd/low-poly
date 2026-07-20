@@ -197,8 +197,10 @@ export class WorkerAutomationSystem {
       return machine ? [machine.standPoint.x, machine.standPoint.z] : null;
     }
     if (stage === 'need-finish') {
-      const finishStation = activeOrder.container === 'cup' ? 'spoon' : 'topping';
-      const point = this.productionSystem.stationPoints.get(finishStation);
+      // Shares the player's rule, so a worker never walks to a station the shop has not
+      // built yet.
+      const finishStation = this.productionSystem._finishStationFor(activeOrder);
+      const point = finishStation ? this.productionSystem.stationPoints.get(finishStation) : null;
       return point ? [point.x, point.z] : null;
     }
     if (stage === 'need-serve' || stage === 'serving' || stage === 'waiting-for-table') {

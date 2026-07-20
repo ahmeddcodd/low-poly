@@ -22,6 +22,14 @@ const GHOST_OPACITY = 0.3;
 // canvas, so this is cheap; pooling 27 would not be.
 const PAD_POOL_SIZE = 8;
 
+// Act 1 is the only place the copy is hand-written; everything after it reads well enough
+// generated from the catalog label.
+const OPENING_HINTS = Object.freeze({
+  'serving-counter': 'Build the serving counter',
+  'vanilla-machine': 'Now add an ice cream machine',
+  'cone-dispenser': 'Last one — add a cone dispenser',
+});
+
 function createGhostMaterial() {
   return new THREE.MeshStandardMaterial({
     color: GHOST_COLOR,
@@ -448,6 +456,64 @@ export class BuildSystem {
 
   get progressPercent() {
     return Math.round((this.owned.size / CATALOG.length) * 100);
+  }
+
+  /**
+   * What the player should be doing right now, whenever they are not mid-order.
+   * Before this existed the banner just said "Customer approaching" forever — including
+   * through the entire cold open, when there were no customers and no counter.
+   */
+  get guidance() {
+    const cash = this.production.cash;
+    const target = this.nextTarget;
+
+    // Cold open: the shop cannot serve anyone yet, so the only job is building.
+    if (!this.shopOpen) {
+      if (!target) return { title: 'Opening up…', detail: 'Getting the shop ready' };
+      // Read live rather than from update(), because production.update() — which asks for
+      // this guidance — runs before buildSystem.update() each frame.
+      const outside = (this.characters.player?.model.position.z ?? 0) > 7.2;
+      if (outside && this.owned.size === 0) {
+        return {
+          title: 'Welcome to your shop',
+          detail: 'Head in through the front door — you have $500 to spend',
+        };
+      }
+      const step = OPENING_CHAIN.indexOf(target.id);
+      const remaining = OPENING_CHAIN.length - step;
+      return {
+        title: OPENING_HINTS[target.id] ?? `Build the ${target.label.toLowerCase()}`,
+        detail: cash >= target.cost
+          ? `Stand on the green pad to spend $${target.cost}`
+          + (remaining > 1 ? ` — ${remaining - 1} more to open` : ' — this one opens the shop!')
+          : `You need $${target.cost - cash} more`,
+      };
+    }
+
+    if (this.complete) {
+      return { title: 'Your ice cream empire is complete!', detail: 'Every machine, station and upgrade is built' };
+    }
+
+    if (!target) {
+      const next = nextLevelFor(this.level);
+      if (!next) return { title: 'Max level reached', detail: 'Keep serving — the shop is yours' };
+      const needed = Math.max(1, next.stars - this.stars);
+      return {
+        title: `Serve ${needed} more customer${needed === 1 ? '' : 's'}`,
+        detail: `Level ${next.level} unlocks the next upgrade`,
+      };
+    }
+
+    if (cash >= target.cost) {
+      return {
+        title: `You can afford the ${target.label.toLowerCase()}!`,
+        detail: `Stand on its green pad to build it — $${target.cost}`,
+      };
+    }
+    return {
+      title: `Saving for the ${target.label.toLowerCase()}`,
+      detail: `$${target.cost - cash} to go — keep serving customers`,
+    };
   }
 
   get levelProgress() {

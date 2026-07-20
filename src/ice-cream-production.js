@@ -629,6 +629,36 @@ export class IceCreamProductionSystem {
     this.buildSystem = buildSystem;
   }
 
+  /**
+   * Which finishing station an order should visit, or null when the shop has not built
+   * one yet. Cups want the spoon/wafer dispenser, cones want toppings; either may be
+   * missing for most of the early game.
+   */
+  /**
+   * Between orders, tell the player what to do next rather than leaving a stale
+   * "Customer approaching" on screen. Uncollected cash comes first — it is the one thing
+   * that blocks every purchase.
+   */
+  _showIdleGuidance() {
+    if (this.pendingCash > 0) {
+      this._setStatus('Collect your cash', `$${this.pendingCash} is waiting by the counter`);
+      return;
+    }
+    const guidance = this.buildSystem?.guidance;
+    if (guidance) {
+      this._setStatus(guidance.title, guidance.detail);
+      return;
+    }
+    this._setStatus('Customer approaching', 'The next guest is walking to the order counter');
+  }
+
+  _finishStationFor(order) {
+    const preferred = order.container === 'cup' ? 'spoon' : 'topping';
+    const stations = this.unlockedStationKeys;
+    if (stations.has(preferred) && this.stationPoints.has(preferred)) return preferred;
+    return null;
+  }
+
   getMachineModel(flavor) {
     return this.machines.find((candidate) => candidate.flavor === flavor)?.model ?? null;
   }
@@ -1006,7 +1036,7 @@ export class IceCreamProductionSystem {
         this._startOrder();
       } else {
         this._setTargetMarker(null);
-        this._setStatus('Customer approaching', 'The next guest is walking to the order counter');
+        this._showIdleGuidance();
       }
       return;
     }
@@ -1058,19 +1088,33 @@ export class IceCreamProductionSystem {
       if (elapsed < this.dispenseReadyAt) return;
       const productName = PRODUCT_NAMES[this.activeOrder.flavor][this.activeOrder.container];
       this._setCarryProduct(productName);
+
+      // The finishing station is optional — early on there is no topping station or spoon
+      // dispenser at all. Sending the player to one that has not been built yet is an
+      // unwinnable instruction, so skip straight to serving instead.
+      const finishStation = this._finishStationFor(this.activeOrder);
+      if (!finishStation) {
+        this.stage = 'need-serve';
+        this._setTargetMarker('serve');
+        this._setStatus(
+          `Serve the ${this.activeOrder.flavor} ${this.activeOrder.container}`,
+          'Take it to the glowing spot behind the counter',
+        );
+        return;
+      }
+
       this.stage = 'need-finish';
-      const finishStation = this.activeOrder.container === 'cup' ? 'spoon' : 'topping';
       this._setTargetMarker(`station-${finishStation}`);
       this._setStatus(
-        this.activeOrder.container === 'cup' ? 'Add a spoon and wafer' : 'Add the finishing topping',
+        finishStation === 'spoon' ? 'Add a spoon and wafer' : 'Add the finishing topping',
         `Walk to the glowing ${finishStation === 'spoon' ? 'spoon dispenser' : 'topping station'}`,
       );
       return;
     }
 
     if (this.stage === 'need-finish') {
-      const finishStation = this.activeOrder.container === 'cup' ? 'spoon' : 'topping';
-      const stationPoint = this.stationPoints.get(finishStation);
+      const finishStation = this._finishStationFor(this.activeOrder);
+      const stationPoint = finishStation ? this.stationPoints.get(finishStation) : null;
       if (!stationPoint || !this._near(playerPosition, stationPoint)) return;
       this.characterSystem.playPlayerAction('Pickup');
       this.stage = 'need-serve';

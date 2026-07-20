@@ -112,6 +112,20 @@ export const CATALOG = Object.freeze([
     effect: Object.freeze({ type: 'flavor', flavor: 'chocolate' }),
   }),
 
+  // Until this is bought the shop has no seating at all and every order goes out as
+  // takeaway. Seating is the upgrade that lets customers stay.
+  Object.freeze({
+    id: 'first-table',
+    label: 'FIRST TABLE',
+    cost: 150,
+    level: 3,
+    ghost: null,
+    position: Object.freeze([-4.3, 0.02, 3.6]),
+    padAt: Object.freeze([-4.3, 2.3]),
+    rotation: 0,
+    effect: Object.freeze({ type: 'table', id: 'compact-table' }),
+  }),
+
   // ── Act 3 — the tray ──────────────────────────────────────────────────────
   Object.freeze({
     id: 'tray-four',

@@ -74,27 +74,48 @@ function createWallColliders(root) {
   return Object.freeze(colliders);
 }
 
+// The doorway gap in the south wall, between Wall_Main_South_Solid_00 and _01.
+const DOORWAY = Object.freeze({ x: -2.5, z: 7.5, radius: 3.2 });
+
 /**
- * The entrance doors used to swing open at boot. They now stay shut through the cold open
- * and swing on the frame the shop can first serve a customer — the payoff beat for the
- * opening purchase chain.
+ * Automatic entrance doors. They used to swing open once at boot, which meant that during
+ * the cold open the player walked straight through a shut door. Now they open whenever
+ * somebody is close enough to actually walk through, and close again behind them.
+ *
+ * The clip is scrubbed by hand rather than played, because it has to run backwards too and
+ * an AnimationAction with a negative timeScale will not clamp cleanly at both ends.
  */
 function createEntranceDoors(root, animations) {
   const clip = animations.find((animation) => animation.name === 'Entrance_Open');
-  if (!clip) return { mixer: null, open() {} };
+  if (!clip) return { mixer: null, update() {} };
 
   const mixer = new THREE.AnimationMixer(root);
   const action = mixer.clipAction(clip);
   action.setLoop(THREE.LoopOnce, 1);
   action.clampWhenFinished = true;
-  let opened = false;
+  action.play();
+  action.paused = true;
+  action.time = 0;
+
+  let openAmount = 0;
+  const nearDoorway = (position) => {
+    const deltaX = position.x - DOORWAY.x;
+    const deltaZ = position.z - DOORWAY.z;
+    return deltaX * deltaX + deltaZ * deltaZ <= DOORWAY.radius * DOORWAY.radius;
+  };
 
   return {
     mixer,
-    open() {
-      if (opened) return;
-      opened = true;
-      action.reset().play();
+    update(delta, watchers) {
+      const wantsOpen = watchers.some(nearDoorway);
+      const target = wantsOpen ? 1 : 0;
+      // ~0.45s to swing either way.
+      const step = delta / 0.45;
+      openAmount = target > openAmount
+        ? Math.min(target, openAmount + step)
+        : Math.max(target, openAmount - step);
+      action.time = openAmount * clip.duration;
+      mixer.update(0);
     },
   };
 }
@@ -195,7 +216,7 @@ export async function createRestaurantScene(scene, onProgress) {
   ]);
   characterSystem.setPlayerColliders(playerColliders);
   const entranceDoors = createEntranceDoors(restaurant, gltf.animations);
-  buildSystem.onShopOpen = () => entranceDoors.open();
+  const doorWatchers = [];
   const bounds = new THREE.Box3().setFromObject(restaurant);
   const size = bounds.getSize(new THREE.Vector3());
 
@@ -218,12 +239,19 @@ export async function createRestaurantScene(scene, onProgress) {
     bounds,
     size,
     update(delta, elapsed) {
-      entranceDoors.mixer?.update(delta);
       characterSystem.update(delta, elapsed);
       iceCreamProduction.update(delta, elapsed);
       iceCreamProduction.updateHiring(delta, elapsed);
       const playerPosition = characterSystem.player.model.position;
       buildSystem.update(delta, elapsed, playerPosition);
+
+      // The doors react to anyone who could actually walk through them.
+      doorWatchers.length = 0;
+      doorWatchers.push(playerPosition);
+      characterSystem.customers.forEach((customer) => {
+        if (customer.model.visible) doorWatchers.push(customer.model.position);
+      });
+      entranceDoors.update(delta, doorWatchers);
 
       // Close the outdoor bound behind the player rather than on a timer, so they are
       // never clamp-teleported mid-stride through the doorway.

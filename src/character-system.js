@@ -55,7 +55,11 @@ const PLAYER_OUTFIT_COLORS = Object.freeze({
 });
 const SEATED_FORWARD_OFFSET = 0.12;
 const SEATED_SETTLE_SPEED = 12;
-const CUSTOMER_ENTRY_POSITION = Object.freeze([-2.5, 8.15]);
+// Customers used to become visible at z=8.15 — barely half a metre outside the doorway —
+// which read as them popping into existence rather than arriving. They now spawn out on
+// the approach and walk in through the door gap (which sits at x=-2.5), and walk back out
+// the same way before disappearing. Both points stay inside Exterior_Grass_Base (z<=11.49).
+const CUSTOMER_ENTRY_POSITION = Object.freeze([-2.5, 11]);
 const CUSTOMER_ENTRY_INSIDE = Object.freeze([-2.5, 6.72]);
 const PLAYER_START_POSITION = Object.freeze([0, -2.5]);
 const ORDER_COUNTER_POINT = Object.freeze([1.55, -0.82]);
@@ -387,6 +391,9 @@ export class CharacterSystem {
     this.customerReturnsEnabled = true;
     // Held shut through the cold open; the build system opens it once the shop can serve.
     this.customerSpawningEnabled = false;
+    // Raised by the takeaway-window upgrade; also the implicit default while the shop has
+    // no seating at all.
+    this.takeawayShare = 0;
     this.customerVisitCount = 0;
     this.playerBounds = { ...WORLD_CONFIG.playerBounds };
     this.playerMarker = createPlayerMarker();
@@ -479,6 +486,10 @@ export class CharacterSystem {
 
   setCustomerSpawningEnabled(enabled) {
     this.customerSpawningEnabled = Boolean(enabled);
+  }
+
+  setTakeawayShare(share) {
+    this.takeawayShare = Math.max(0, Math.min(1, share ?? 0));
   }
 
   /** Relaxed during the cold open so the player can start on the pavement outside. */
@@ -702,6 +713,13 @@ export class CharacterSystem {
       const { model, definition } = customer;
       if (customer.state === 'paying') {
         if (elapsed < customer.stateUntil) return;
+        if (customer.takeaway) {
+          customer.state = 'leaving';
+          customer.route = [CUSTOMER_ENTRY_INSIDE, CUSTOMER_ENTRY_POSITION];
+          customer.routeIndex = 0;
+          this.setAnimation(definition.id, 'Carry_Walk_Customer');
+          return;
+        }
         const seat = this.diningSeats.find(({ id }) => id === customer.seatId);
         if (!seat) return;
         customer.state = 'walking-to-seat';
@@ -806,24 +824,7 @@ export class CharacterSystem {
     });
   }
 
-  serveFrontCustomer(elapsed, order) {
-    const servedCustomer = this.getFrontCustomer();
-    if (!servedCustomer) return Object.freeze({ ok: false, reason: 'no-customer' });
-
-    const seat = this.diningSeats.find((candidate) => {
-      const table = this.getDiningTable(candidate.tableId);
-      return candidate.occupiedBy === null && table?.unlocked && table.state === 'clean';
-    });
-    if (!seat) return Object.freeze({ ok: false, reason: 'no-seat' });
-
-    seat.occupiedBy = servedCustomer.definition.id;
-    servedCustomer.queueIndex = -1;
-    servedCustomer.state = 'paying';
-    servedCustomer.stateUntil = elapsed + 1.05;
-    servedCustomer.order = order ?? servedCustomer.order;
-    servedCustomer.seatId = seat.id;
-    this.setAnimation(servedCustomer.definition.id, 'Receive_Order', 0.1);
-
+  _advanceQueueAfter(servedCustomer) {
     this.customers.forEach((customer) => {
       if (customer === servedCustomer || customer.state === 'departed' || customer.queueIndex <= 0) return;
       customer.queueIndex -= 1;
@@ -841,6 +842,46 @@ export class CharacterSystem {
       customer.state = 'walking';
       this.setAnimation(customer.definition.id, 'Walk_Customer');
     });
+  }
+
+  serveFrontCustomer(elapsed, order) {
+    const servedCustomer = this.getFrontCustomer();
+    if (!servedCustomer) return Object.freeze({ ok: false, reason: 'no-customer' });
+
+    const seat = this.diningSeats.find((candidate) => {
+      const table = this.getDiningTable(candidate.tableId);
+      return candidate.occupiedBy === null && table?.unlocked && table.state === 'clean';
+    });
+
+    if (!seat) {
+      // With no seating built at all, everyone takes their order to go. Without this the
+      // shop is unserveable before the first dining set is affordable — orders complete
+      // and park in waiting-for-table forever, so the player can never earn anything.
+      // Once tables exist, a full room is real pressure again and drives the cleaning loop.
+      const hasSeating = this.diningTables.some(({ unlocked }) => unlocked);
+      if (hasSeating && this.takeawayShare <= 0) {
+        return Object.freeze({ ok: false, reason: 'no-seat' });
+      }
+      servedCustomer.queueIndex = -1;
+      servedCustomer.state = 'paying';
+      servedCustomer.stateUntil = elapsed + 1.05;
+      servedCustomer.order = order ?? servedCustomer.order;
+      servedCustomer.seatId = null;
+      servedCustomer.takeaway = true;
+      this.setAnimation(servedCustomer.definition.id, 'Receive_Order', 0.1);
+      this._advanceQueueAfter(servedCustomer);
+      return Object.freeze({ ok: true, customer: servedCustomer, seatId: null, takeaway: true });
+    }
+
+    seat.occupiedBy = servedCustomer.definition.id;
+    servedCustomer.queueIndex = -1;
+    servedCustomer.state = 'paying';
+    servedCustomer.stateUntil = elapsed + 1.05;
+    servedCustomer.order = order ?? servedCustomer.order;
+    servedCustomer.seatId = seat.id;
+    servedCustomer.takeaway = false;
+    this.setAnimation(servedCustomer.definition.id, 'Receive_Order', 0.1);
+    this._advanceQueueAfter(servedCustomer);
 
     return Object.freeze({ ok: true, customer: servedCustomer, seatId: seat.id });
   }
