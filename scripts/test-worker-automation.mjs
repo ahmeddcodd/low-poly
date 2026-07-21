@@ -65,6 +65,13 @@ assert.equal(cashier.currentAnimation, 'Walk_Player');
 assert.ok(cashier.model.position.distanceTo(cupPoint) < startDistance);
 assert.notDeepEqual(cashier.model.position.toArray(), counterStart.toArray());
 
+system.setWorkerCount(2);
+assert.equal(system.workerCount, 2);
+assert.equal(system.workers[1].role, 'cleaner');
+assert.equal(system.workers[1].model.visible, true);
+assert.equal(system.assignedServerIndex, 0, 'hiring the cleaner interrupted the server');
+assert.equal(system.assignedOrder, strawberryCup, 'the server lost its active order');
+
 cashier.model.position.copy(cupPoint);
 system.update(0.016, 1);
 

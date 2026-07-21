@@ -4,6 +4,7 @@ import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { WORLD_CONFIG } from './config.js';
 
 const BASE_WORKER_SPEED = 1.55;
+const WORKER_CLEARANCE = 0.26;
 const NAV_CELL_SIZE = 0.42;
 const NAV_GOAL_EPSILON = 0.06;
 const NAV_SEGMENT_STEP = 0.16;
@@ -138,18 +139,30 @@ export class WorkerAutomationSystem {
   }
 
   setWorkerCount(count) {
+    const previousCount = this.workerCount;
     const nextCount = THREE.MathUtils.clamp(Math.floor(count), 0, this.workers.length);
-    if (nextCount !== this.workerCount) {
+    if (nextCount === 0) {
       this.assignedOrder = null;
       this.assignedServerIndex = null;
     }
     this.workerCount = nextCount;
     this.workers.forEach((worker, index) => {
-      worker.model.visible = index < this.workerCount;
-      if (index >= this.workerCount) {
+      const active = index < this.workerCount;
+      const newlyActive = active && index >= previousCount;
+      worker.model.visible = active;
+      if (!active) {
         worker.tray.group.visible = false;
         worker.state = 'at-post';
         worker.taskTableId = null;
+        worker.lastHandledStage = null;
+        this._resetNavigation(worker);
+        return;
+      }
+      if (newlyActive) {
+        worker.tray.group.visible = false;
+        worker.state = 'at-post';
+        worker.taskTableId = null;
+        worker.lastHandledStage = null;
         this._resetNavigation(worker);
       }
     });
@@ -192,10 +205,17 @@ export class WorkerAutomationSystem {
 
   _isNavigationBlocked(x, z) {
     const bounds = WORLD_CONFIG.playerBounds;
-    if (x < bounds.minX || x > bounds.maxX || z < bounds.minZ || z > bounds.maxZ) {
+    if (x < bounds.minX + WORKER_CLEARANCE
+      || x > bounds.maxX - WORKER_CLEARANCE
+      || z < bounds.minZ + WORKER_CLEARANCE
+      || z > bounds.maxZ - WORKER_CLEARANCE) {
       return true;
     }
-    return Boolean(this.characterSystem.isNavigationBlocked?.(x, z));
+    return Boolean(this.characterSystem.isNavigationBlocked?.(
+      x,
+      z,
+      WORKER_CLEARANCE,
+    ));
   }
 
   _segmentIsClear(startX, startZ, endX, endZ) {
@@ -387,6 +407,7 @@ export class WorkerAutomationSystem {
       const safePoint = this.characterSystem.findNearestNavigationPoint?.(
         worker.model.position.x,
         worker.model.position.z,
+        WORKER_CLEARANCE,
       );
       if (!safePoint) {
         setWorkerAnimation(worker, carrying ? 'Carry_Idle' : 'Idle', this.speedLevel);

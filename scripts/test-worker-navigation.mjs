@@ -16,16 +16,17 @@ const obstacle = Object.freeze({
   minZ: -1,
   maxZ: 1,
 });
-const isBlocked = (x, z) => (
-  x >= obstacle.minX
-  && x <= obstacle.maxX
-  && z >= obstacle.minZ
-  && z <= obstacle.maxZ
+const EXPECTED_WORKER_CLEARANCE = 0.26;
+const isBlocked = (x, z, extraClearance = 0) => (
+  x >= obstacle.minX - extraClearance
+  && x <= obstacle.maxX + extraClearance
+  && z >= obstacle.minZ - extraClearance
+  && z <= obstacle.maxZ + extraClearance
 );
 const characterSystem = {
   isNavigationBlocked: isBlocked,
-  findNearestNavigationPoint(x, z) {
-    return isBlocked(x, z) ? null : { x, z };
+  findNearestNavigationPoint(x, z, extraClearance = 0) {
+    return isBlocked(x, z, extraClearance) ? null : { x, z };
   },
 };
 const productionSystem = {
@@ -53,14 +54,14 @@ for (let frame = 0; frame < 1200 && !arrived; frame += 1) {
   arrived = system._moveWorker(worker, target, 1 / 60, false);
   greatestDetour = Math.max(greatestDetour, Math.abs(worker.model.position.z));
   assert.equal(
-    isBlocked(worker.model.position.x, worker.model.position.z),
+    isBlocked(worker.model.position.x, worker.model.position.z, EXPECTED_WORKER_CLEARANCE),
     false,
     'worker entered the furniture collider',
   );
 }
 
 assert.equal(arrived, true);
-assert.ok(greatestDetour > obstacle.maxZ, 'worker did not route around the obstacle');
+assert.ok(greatestDetour > obstacle.maxZ + EXPECTED_WORKER_CLEARANCE, 'worker clearance was not preserved');
 assert.ok(Math.hypot(worker.model.position.x - target[0], worker.model.position.z - target[1]) < 0.03);
 
 const dirtyTable = {
@@ -99,7 +100,7 @@ for (let frame = 0; frame < 2400 && !cleanupCalls.includes('disposed'); frame +=
   system.update(1 / 60, frame / 60);
   cleanerDetour = Math.max(cleanerDetour, Math.abs(cleaner.model.position.z));
   assert.equal(
-    isBlocked(cleaner.model.position.x, cleaner.model.position.z),
+    isBlocked(cleaner.model.position.x, cleaner.model.position.z, EXPECTED_WORKER_CLEARANCE),
     false,
     'cleaner entered the furniture collider',
   );
@@ -108,6 +109,6 @@ for (let frame = 0; frame < 2400 && !cleanupCalls.includes('disposed'); frame +=
 assert.deepEqual(cleanupCalls, ['picked-up', 'disposed']);
 assert.equal(cleaner.role, 'cleaner');
 assert.equal(cleaner.state, 'disposing');
-assert.ok(cleanerDetour > obstacle.maxZ, 'cleaner did not route around the obstacle');
+assert.ok(cleanerDetour > obstacle.maxZ + EXPECTED_WORKER_CLEARANCE, 'cleaner clearance was not preserved');
 system.dispose();
 console.log('worker navigation tests passed');

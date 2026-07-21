@@ -452,19 +452,45 @@ export class CharacterSystem {
     this.resolvePlayerCollisionOverlap();
   }
 
-  isNavigationBlocked(x, z) {
+  isNavigationBlocked(x, z, extraClearance = 0) {
     const bounds = WORLD_CONFIG.playerBounds;
-    return x < bounds.minX
-      || x > bounds.maxX
-      || z < bounds.minZ
-      || z > bounds.maxZ
-      || this._playerCollides(x, z);
+    const clearance = Math.max(0, Number(extraClearance) || 0);
+    if (x < bounds.minX + clearance
+      || x > bounds.maxX - clearance
+      || z < bounds.minZ + clearance
+      || z > bounds.maxZ - clearance) {
+      return true;
+    }
+    if (clearance === 0) return this._playerCollides(x, z);
+    return this.playerColliders.some((collider) => (
+      collider?.enabled !== false
+      && x >= collider.minX - clearance
+      && x <= collider.maxX + clearance
+      && z >= collider.minZ - clearance
+      && z <= collider.maxZ + clearance
+    ));
   }
 
-  findNearestNavigationPoint(x, z) {
+  findNearestNavigationPoint(x, z, extraClearance = 0) {
+    const clearance = Math.max(0, Number(extraClearance) || 0);
+    const colliders = clearance === 0
+      ? this.playerColliders
+      : this.playerColliders.map((collider) => ({
+        ...collider,
+        minX: collider.minX - clearance,
+        maxX: collider.maxX + clearance,
+        minZ: collider.minZ - clearance,
+        maxZ: collider.maxZ + clearance,
+      }));
+    const bounds = WORLD_CONFIG.playerBounds;
     return findNearestClearPoint(
-      this.playerColliders,
-      WORLD_CONFIG.playerBounds,
+      colliders,
+      clearance === 0 ? bounds : {
+        minX: bounds.minX + clearance,
+        maxX: bounds.maxX - clearance,
+        minZ: bounds.minZ + clearance,
+        maxZ: bounds.maxZ - clearance,
+      },
       x,
       z,
     );
