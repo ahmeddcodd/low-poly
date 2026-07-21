@@ -233,14 +233,12 @@ export class WorkerAutomationSystem {
 
   _planNavigation(worker, requestedTarget) {
     const target = [requestedTarget[0], requestedTarget[1]];
-    worker.navigationGoal = target;
-    worker.navigationArrival = null;
-    worker.navigationPath.length = 0;
-    worker.navigationIndex = 0;
+    this._resetNavigation(worker);
 
     const startX = worker.model.position.x;
     const startZ = worker.model.position.z;
     if (this._segmentIsClear(startX, startZ, target[0], target[1])) {
+      worker.navigationGoal = target;
       worker.navigationArrival = target;
       worker.navigationPath.push(target);
       return true;
@@ -398,6 +396,7 @@ export class WorkerAutomationSystem {
       anchorZ = waypoint[1];
       candidateIndex = furthest + 1;
     }
+    worker.navigationGoal = target;
     worker.navigationArrival = arrival;
     worker.navigationPath.push(...smoothed);
     return worker.navigationPath.length > 0;
@@ -580,6 +579,7 @@ export class WorkerAutomationSystem {
       if (!arrived) return;
       setWorkerAnimation(worker, 'Pickup', this.speedLevel, 0.08);
       if (cleanup.beginWorkerCleanup(worker.model, table.id)) {
+        this._resetNavigation(worker);
         worker.state = 'to-bin';
       } else {
         worker.taskTableId = null;

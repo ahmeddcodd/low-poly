@@ -16,12 +16,23 @@ const obstacle = Object.freeze({
   minZ: -1,
   maxZ: 1,
 });
+const routeWall = Object.freeze({
+  minX: -0.25,
+  maxX: 0.25,
+  minZ: -20,
+  maxZ: 20,
+});
+let routeBlocked = false;
 const EXPECTED_WORKER_CLEARANCE = 0.26;
+const pointInside = (collider, x, z, extraClearance) => (
+  x >= collider.minX - extraClearance
+  && x <= collider.maxX + extraClearance
+  && z >= collider.minZ - extraClearance
+  && z <= collider.maxZ + extraClearance
+);
 const isBlocked = (x, z, extraClearance = 0) => (
-  x >= obstacle.minX - extraClearance
-  && x <= obstacle.maxX + extraClearance
-  && z >= obstacle.minZ - extraClearance
-  && z <= obstacle.maxZ + extraClearance
+  pointInside(obstacle, x, z, extraClearance)
+  || (routeBlocked && pointInside(routeWall, x, z, extraClearance))
 );
 const characterSystem = {
   isNavigationBlocked: isBlocked,
@@ -82,11 +93,17 @@ productionSystem.tableCleanup = {
   beginWorkerCleanup(model, tableId) {
     assert.equal(tableId, dirtyTable.id);
     dirtyTable.state = 'garbage-carried';
+    routeBlocked = true;
     cleanupCalls.push('picked-up');
     return true;
   },
   startWorkerDisposal(model, tableId) {
     assert.equal(tableId, dirtyTable.id);
+    assert.ok(
+      Math.hypot(model.position.x + 2, model.position.z) < 0.08,
+      'cleaner disposed trash before reaching the bin',
+    );
+    assert.equal(routeBlocked, false);
     dirtyTable.state = 'clean';
     cleanupCalls.push('disposed');
     return true;
@@ -96,8 +113,34 @@ productionSystem.tableCleanup = {
 system.setWorkerCount(2);
 const cleaner = system.workers[1];
 let cleanerDetour = 0;
-for (let frame = 0; frame < 2400 && !cleanupCalls.includes('disposed'); frame += 1) {
+for (let frame = 0; frame < 2400 && !cleanupCalls.includes('picked-up'); frame += 1) {
   system.update(1 / 60, frame / 60);
+  cleanerDetour = Math.max(cleanerDetour, Math.abs(cleaner.model.position.z));
+  assert.equal(
+    isBlocked(cleaner.model.position.x, cleaner.model.position.z, EXPECTED_WORKER_CLEARANCE),
+    false,
+    'cleaner entered the furniture collider',
+  );
+}
+
+assert.deepEqual(cleanupCalls, ['picked-up']);
+assert.equal(cleaner.state, 'to-bin');
+const pickupPosition = cleaner.model.position.clone();
+system.update(1 / 60, 40);
+system.update(1 / 60, 40 + 1 / 60);
+assert.deepEqual(cleanupCalls, ['picked-up'], 'cleaner treated a failed route as bin arrival');
+assert.equal(cleaner.state, 'to-bin');
+assert.ok(cleaner.model.position.distanceTo(pickupPosition) < 0.001);
+
+routeBlocked = false;
+system.update(1 / 60, 40 + 2 / 60);
+cleanerDetour = Math.max(cleanerDetour, Math.abs(cleaner.model.position.z));
+assert.equal(cleaner.state, 'to-bin');
+assert.ok(cleaner.model.position.distanceTo(pickupPosition) > 0.001, 'cleaner did not resume walking');
+assert.equal(cleaner.currentAnimation, 'Carry_Walk');
+
+for (let frame = 0; frame < 2400 && !cleanupCalls.includes('disposed'); frame += 1) {
+  system.update(1 / 60, 41 + frame / 60);
   cleanerDetour = Math.max(cleanerDetour, Math.abs(cleaner.model.position.z));
   assert.equal(
     isBlocked(cleaner.model.position.x, cleaner.model.position.z, EXPECTED_WORKER_CLEARANCE),
