@@ -42,7 +42,8 @@ const CASH_POINT = Object.freeze([6.05, 0.08, -0.05]);
 const INTERACTION_RADIUS = 0.82;
 const CASH_PICKUP_RADIUS = 1;
 const MAX_CASH_BILLS = 24;
-const STORY_SERVICE_GOAL = 22;
+const STARTING_CASH = 500;
+const STORY_SERVICE_GOAL = 40;
 const ORDER_FLAVOR_COLORS = Object.freeze({
   vanilla: '#ffe7a0',
   strawberry: '#ff7690',
@@ -479,10 +480,14 @@ export class IceCreamProductionSystem {
       ? Number(debugParameters.get('order'))
       : 0;
     this.servedCount = Number.isInteger(debugOrder) && debugOrder >= 0 ? debugOrder : 0;
-    const debugCash = debugParameters ? Number(debugParameters.get('cash')) : 0;
-    this.cash = Number.isInteger(debugCash) && debugCash >= 0 ? debugCash : 0;
+    const debugCashValue = debugParameters?.get('cash');
+    const initialCash = debugCashValue === null || debugCashValue === undefined
+      ? STARTING_CASH
+      : Number(debugCashValue);
+    this.cash = Number.isInteger(initialCash) && initialCash >= 0 ? initialCash : STARTING_CASH;
     this.pendingCash = 0;
     this.pendingPayments = 0;
+    this.totalCollectedCash = 0;
     this.lastCollectedAmount = 0;
     this.orderBubbles = new Map();
     this.customerProducts = new Map();
@@ -496,8 +501,8 @@ export class IceCreamProductionSystem {
     this.suspendedTargetMarkerId = null;
     this.statusRevision = 0;
     this.status = Object.freeze({
-      title: 'Customer approaching',
-      detail: 'Get ready to make the first ice cream order',
+      title: 'Enter your ice cream shop',
+      detail: 'Walk through the front doors to begin building your business',
     });
     this.targetMarkerId = null;
 
@@ -510,7 +515,8 @@ export class IceCreamProductionSystem {
     this.group.add(this.cashMarker);
     this._buildStations();
     this._buildCarryRig();
-    this.setUnlockedFlavors(['vanilla', 'strawberry']);
+    this.setSupportStationsVisible(false);
+    this.setUnlockedFlavors([]);
   }
 
   _buildStations() {
@@ -611,6 +617,20 @@ export class IceCreamProductionSystem {
         .forEach((collider) => { collider.enabled = unlocked; });
       if (!unlocked) {
         const marker = this.markers.get(`machine-${machine.flavor}`);
+        if (marker) marker.visible = false;
+      }
+    });
+  }
+
+  setSupportStationsVisible(visible) {
+    this.supportStationsVisible = Boolean(visible);
+    this.supports.forEach(({ definition, model }) => {
+      model.visible = this.supportStationsVisible;
+      this.colliders
+        .filter(({ productionAssetId }) => productionAssetId === definition.id)
+        .forEach((collider) => { collider.enabled = this.supportStationsVisible; });
+      if (!this.supportStationsVisible && definition.station) {
+        const marker = this.markers.get('station-' + definition.station);
         if (marker) marker.visible = false;
       }
     });
@@ -722,6 +742,7 @@ export class IceCreamProductionSystem {
 
     const collected = this.pendingCash;
     this.cash += collected;
+    this.totalCollectedCash += collected;
     this.pendingCash = 0;
     this.pendingPayments = 0;
     this.lastCollectedAmount = collected;
@@ -941,6 +962,11 @@ export class IceCreamProductionSystem {
     const playerPosition = player.model.position;
     this._tryCollectCash(playerPosition);
     if (this._handleTableCleanup(elapsed, playerPosition)) return;
+
+    if (this.stage === 'waiting' && this.progressionSystem?.blocksOrders) {
+      this._setTargetMarker(null);
+      return;
+    }
 
     if (this.stage === 'waiting') {
       if (this.progressionSystem?.complete && this.servedCount >= STORY_SERVICE_GOAL) {

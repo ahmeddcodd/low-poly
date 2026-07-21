@@ -57,7 +57,7 @@ const SEATED_FORWARD_OFFSET = 0.12;
 const SEATED_SETTLE_SPEED = 12;
 const CUSTOMER_ENTRY_POSITION = Object.freeze([-2.5, 8.15]);
 const CUSTOMER_ENTRY_INSIDE = Object.freeze([-2.5, 6.72]);
-const PLAYER_START_POSITION = Object.freeze([0, -2.5]);
+const PLAYER_START_POSITION = Object.freeze([-2.5, 8.15]);
 const ORDER_COUNTER_POINT = Object.freeze([1.55, -0.82]);
 const DINING_TABLE_DEFINITIONS = Object.freeze([
   Object.freeze({
@@ -385,6 +385,7 @@ export class CharacterSystem {
       occupiedBy: null,
     }));
     this.customerReturnsEnabled = true;
+    this.customerFlowEnabled = false;
     this.customerVisitCount = 0;
     this.playerMarker = createPlayerMarker();
     this.group.add(this.playerMarker);
@@ -420,8 +421,7 @@ export class CharacterSystem {
       character.order = null;
       character.seatId = null;
       character.departedAt = Infinity;
-      character.visitNumber = 1;
-      this.customerVisitCount += 1;
+      character.visitNumber = 0;
       character.mealUntil = 0;
       character.route = [
         CUSTOMER_ENTRY_INSIDE,
@@ -472,6 +472,34 @@ export class CharacterSystem {
 
   setCustomerReturnsEnabled(enabled) {
     this.customerReturnsEnabled = Boolean(enabled);
+  }
+
+  setCustomerFlowEnabled(enabled, elapsed = this.elapsed) {
+    const nextEnabled = Boolean(enabled);
+    if (this.customerFlowEnabled === nextEnabled) return;
+    this.customerFlowEnabled = nextEnabled;
+    if (!nextEnabled) return;
+
+    this.customers.forEach((customer, queueIndex) => {
+      customer.queueIndex = queueIndex;
+      customer.state = 'waiting-to-enter';
+      customer.spawnAt = elapsed + CUSTOMER_SPAWN_DELAY + queueIndex * CUSTOMER_SPAWN_INTERVAL;
+      customer.order = null;
+      customer.seatId = null;
+      customer.departedAt = Infinity;
+      customer.visitNumber = 1;
+      customer.mealUntil = 0;
+      customer.route = [
+        CUSTOMER_ENTRY_INSIDE,
+        ...CUSTOMER_QUEUE_SLOTS.slice(queueIndex).reverse(),
+      ];
+      customer.routeIndex = 0;
+      customer.model.position.x = CUSTOMER_ENTRY_POSITION[0];
+      customer.model.position.z = CUSTOMER_ENTRY_POSITION[1];
+      customer.model.rotation.y = targetRotation(0, -1);
+      customer.model.visible = false;
+      this.customerVisitCount += 1;
+    });
   }
 
   setPlayerCarrying(carrying) {
@@ -685,6 +713,7 @@ export class CharacterSystem {
   }
 
   _updateCustomers(delta, elapsed) {
+    if (!this.customerFlowEnabled) return;
     this._recycleDepartedCustomers(elapsed);
     this.customers.forEach((customer) => {
       const { model, definition } = customer;

@@ -1,38 +1,108 @@
 import * as THREE from 'three';
 
-const STARTING_FLAVORS = Object.freeze(['vanilla', 'strawberry']);
-const STARTING_TABLES = Object.freeze(['compact-table']);
+export const STARTING_CASH = 500;
 const PAYMENT_RADIUS = 0.95;
-const PAYMENT_RATE = 36;
+const PAYMENT_RATE = 42;
 const CASH_PER_FLIGHT = 4;
 const CASH_FLIGHT_DURATION = 0.46;
-const MAX_CASH_FLIGHTS = 16;
+const MAX_CASH_FLIGHTS = 18;
 
-const STORY_STEPS = Object.freeze([
+export const STORY_STEPS = Object.freeze([
   Object.freeze({
-    id: 'starter-sales',
+    id: 'enter-shop',
+    type: 'location',
+    position: Object.freeze([-2.5, 0.04, 6.15]),
+    radius: 1.05,
+    title: 'Enter your ice cream shop',
+    detail: 'Walk through the opening front doors to begin your business',
+  }),
+  Object.freeze({
+    id: 'starter-counter',
+    type: 'purchase',
+    unlockType: 'counter',
+    cost: 140,
+    position: Object.freeze([1.55, 0.04, 0.65]),
+    label: 'COUNTER',
+    footer: 'STARTER SETUP',
+    title: 'Build the service counter',
+    detail: 'Stand on the counter pad and invest $140 from your starting cash',
+  }),
+  Object.freeze({
+    id: 'vanilla-machine',
+    type: 'purchase',
+    unlockType: 'flavor',
+    unlockId: 'vanilla',
+    cost: 100,
+    position: Object.freeze([-6.4, 0.04, -3.45]),
+    label: 'VANILLA',
+    footer: 'FIRST FLAVOUR',
+    title: 'Install the vanilla machine',
+    detail: 'Invest $100 at the vanilla equipment pad',
+  }),
+  Object.freeze({
+    id: 'strawberry-machine',
+    type: 'purchase',
+    unlockType: 'flavor',
+    unlockId: 'strawberry',
+    cost: 100,
+    position: Object.freeze([-4, 0.04, -3.45]),
+    label: 'STRAWBERRY',
+    footer: 'SECOND FLAVOUR',
+    title: 'Install the strawberry machine',
+    detail: 'Invest $100 to offer a second starter flavour',
+  }),
+  Object.freeze({
+    id: 'starter-seating',
+    type: 'purchase',
+    unlockType: 'table',
+    unlockId: 'compact-table',
+    opensCustomers: true,
+    cost: 110,
+    position: Object.freeze([-4.3, 0.04, 2.55]),
+    label: '2 SEATS',
+    footer: 'GRAND OPENING',
+    title: 'Build the first seating area',
+    detail: 'Invest $110 in a table and two chairs to open the shop',
+  }),
+  Object.freeze({
+    id: 'first-sales',
     type: 'served',
-    target: 2,
-    title: 'Serve 2 starter orders',
-    detail: 'Build your first cash stack with vanilla and strawberry sales',
+    target: 3,
+    title: 'Serve the first 3 customers',
+    detail: 'Make vanilla and strawberry orders and stack their payments',
+  }),
+  Object.freeze({
+    id: 'first-collection',
+    type: 'collected',
+    target: 50,
+    title: 'Collect the first cash stack',
+    detail: 'Walk to the green cash pile on the left side of the counter',
   }),
   Object.freeze({
     id: 'north-seating',
     type: 'purchase',
     unlockType: 'table',
     unlockId: 'dining-set-north',
-    cost: 20,
-    position: Object.freeze([-6.5, 0.04, 2.45]),
+    cost: 60,
+    position: Object.freeze([-6.5, 0.04, 1.35]),
     label: 'MORE SEATS',
-    title: 'Unlock another seating area',
-    detail: 'Stand on the dining expansion pad and invest $20',
+    footer: 'DINING UPGRADE',
+    title: 'Add another seating area',
+    detail: 'Invest $60 so more customers can sit and eat',
+  }),
+  Object.freeze({
+    id: 'steady-sales',
+    type: 'served',
+    target: 6,
+    title: 'Serve 6 customers',
+    detail: 'Use the extra seats to build enough cash for HR',
   }),
   Object.freeze({
     id: 'hire-hr',
     type: 'manager',
     managerId: 'gym-manager',
     title: 'Hire HR',
-    detail: 'Save $60, then stand on the cash pad inside the HR office',
+    detail: 'Enter the HR office and fund the $60 hiring pad',
   }),
   Object.freeze({
     id: 'first-worker',
@@ -40,7 +110,14 @@ const STORY_STEPS = Object.freeze([
     upgradeId: 'workers',
     target: 1,
     title: 'Hire your first worker',
-    detail: 'Enter the HR office and buy More workers',
+    detail: 'Use the HR cards to assign an employee to the counter',
+  }),
+  Object.freeze({
+    id: 'worker-sales',
+    type: 'served',
+    target: 9,
+    title: 'Serve 9 customers',
+    detail: 'Work with your new employee to fund team training',
   }),
   Object.freeze({
     id: 'worker-speed',
@@ -48,55 +125,145 @@ const STORY_STEPS = Object.freeze([
     upgradeId: 'worker-speed',
     target: 1,
     title: 'Train the ice cream team',
-    detail: 'Buy one Worker speed upgrade in the HR office',
+    detail: 'Buy the first Worker speed upgrade in the HR office',
+  }),
+  Object.freeze({
+    id: 'flavour-fund',
+    type: 'served',
+    target: 12,
+    title: 'Serve 12 customers',
+    detail: 'Save enough profit to add a premium flavour',
   }),
   Object.freeze({
     id: 'chocolate-machine',
     type: 'purchase',
     unlockType: 'flavor',
     unlockId: 'chocolate',
-    cost: 30,
-    position: Object.freeze([-1.6, 0.04, -4.72]),
+    cost: 80,
+    position: Object.freeze([-1.6, 0.04, -3.45]),
     label: 'CHOCOLATE',
+    footer: 'NEW FLAVOUR',
     title: 'Unlock chocolate ice cream',
-    detail: 'Invest $30 at the chocolate machine pad to add a new flavour',
+    detail: 'Invest $80 to install the chocolate machine',
+  }),
+  Object.freeze({
+    id: 'chocolate-sales',
+    type: 'served',
+    target: 15,
+    title: 'Serve 15 customers',
+    detail: 'Sell all three flavours to fund a larger dining room',
   }),
   Object.freeze({
     id: 'center-seating',
     type: 'purchase',
     unlockType: 'table',
     unlockId: 'dining-set-center',
-    cost: 35,
-    position: Object.freeze([-6.5, 0.04, 5]),
+    cost: 50,
+    position: Object.freeze([-6.5, 0.04, 5.95]),
     label: 'MORE TABLES',
-    title: 'Expand customer seating',
-    detail: 'Invest $35 at the final dining expansion pad',
+    footer: 'DINING UPGRADE',
+    title: 'Complete the dining area',
+    detail: 'Invest $50 to unlock the final customer table',
+  }),
+  Object.freeze({
+    id: 'team-fund',
+    type: 'served',
+    target: 18,
+    title: 'Serve 18 customers',
+    detail: 'Use the expanded dining area to fund another employee',
+  }),
+  Object.freeze({
+    id: 'second-worker',
+    type: 'upgrade',
+    upgradeId: 'workers',
+    target: 2,
+    title: 'Hire a second worker',
+    detail: 'Add an employee who can prepare orders and help with cleaning',
+  }),
+  Object.freeze({
+    id: 'training-fund',
+    type: 'served',
+    target: 21,
+    title: 'Serve 21 customers',
+    detail: 'Let the larger team earn cash for advanced training',
+  }),
+  Object.freeze({
+    id: 'second-speed',
+    type: 'upgrade',
+    upgradeId: 'worker-speed',
+    target: 2,
+    title: 'Upgrade worker speed again',
+    detail: 'Purchase level 2 Worker speed from HR',
+  }),
+  Object.freeze({
+    id: 'manager-fund',
+    type: 'served',
+    target: 24,
+    title: 'Serve 24 customers',
+    detail: 'Build the cash reserve needed for a General Manager',
   }),
   Object.freeze({
     id: 'hire-gm',
     type: 'manager',
     managerId: 'wc-manager',
     title: 'Hire the General Manager',
-    detail: 'Save $80, then fund the pad inside the GM office',
+    detail: 'Enter the GM office and fund the $80 hiring pad',
+  }),
+  Object.freeze({
+    id: 'gm-fund',
+    type: 'served',
+    target: 28,
+    title: 'Serve 28 customers',
+    detail: 'Earn enough for the General Manager profit plan',
   }),
   Object.freeze({
     id: 'gm-boost',
     type: 'upgrade',
     upgradeId: 'wc-boost',
     target: 1,
-    title: 'Boost player speed and profit',
-    detail: 'Enter the GM office and purchase the 2x profit upgrade',
+    title: 'Activate 2x shop profit',
+    detail: 'Buy Player + profit to double payments and increase player speed',
+  }),
+  Object.freeze({
+    id: 'mint-fund',
+    type: 'served',
+    target: 31,
+    title: 'Serve 31 customers with 2x profit',
+    detail: 'Use the faster earnings to fund the final flavour',
   }),
   Object.freeze({
     id: 'mint-machine',
     type: 'purchase',
     unlockType: 'flavor',
     unlockId: 'mint',
-    cost: 50,
-    position: Object.freeze([0.8, 0.04, -4.72]),
+    cost: 100,
+    position: Object.freeze([0.8, 0.04, -3.45]),
     label: 'MINT',
-    title: 'Unlock the final mint machine',
-    detail: 'Invest $50 to complete the four-flavour ice cream shop',
+    footer: 'FINAL FLAVOUR',
+    title: 'Unlock mint ice cream',
+    detail: 'Invest $100 to complete the four-flavour machine line',
+  }),
+  Object.freeze({
+    id: 'staff-fund',
+    type: 'served',
+    target: 34,
+    title: 'Serve 34 customers',
+    detail: 'Use all four flavours to fund one more specialist worker',
+  }),
+  Object.freeze({
+    id: 'third-worker',
+    type: 'upgrade',
+    upgradeId: 'workers',
+    target: 3,
+    title: 'Hire a third worker',
+    detail: 'Complete a three-person team for counter, orders, and cleaning',
+  }),
+  Object.freeze({
+    id: 'grand-finale',
+    type: 'served',
+    target: 40,
+    title: 'Complete the four-flavour rush',
+    detail: 'Serve 40 customers to finish the ice cream shop story',
   }),
 ]);
 
@@ -141,14 +308,14 @@ function createPadLabel(step) {
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     context.fillStyle = '#ffffff';
-    context.font = `900 ${step.label.length > 10 ? 38 : 48}px Arial, sans-serif`;
+    context.font = '900 ' + (step.label.length > 10 ? 38 : 48) + 'px Arial, sans-serif';
     context.fillText(step.label, 256, 108);
     drawCashNote(context, 74, 181);
     context.font = '900 86px Arial, sans-serif';
     context.fillText(String(remaining), 344, 217);
     context.fillStyle = '#d8e2d1';
     context.font = '800 29px Arial, sans-serif';
-    context.fillText('SHOP EXPANSION', 256, 348);
+    context.fillText(step.footer || 'SHOP UPGRADE', 256, 348);
     texture.needsUpdate = true;
   };
   redraw(step.cost);
@@ -157,7 +324,7 @@ function createPadLabel(step) {
 
 function createUnlockPad(step) {
   const group = new THREE.Group();
-  group.name = `Story_Unlock_Pad_${step.id}`;
+  group.name = 'Story_Unlock_Pad_' + step.id;
   group.position.set(...step.position);
   group.visible = false;
 
@@ -191,6 +358,60 @@ function createUnlockPad(step) {
     object.receiveShadow = true;
   });
   return { group, label, paid: 0, paymentBudget: 0, cashVisualBudget: 0 };
+}
+
+function createWaypointMarker(step) {
+  const group = new THREE.Group();
+  group.name = 'Story_Waypoint_' + step.id;
+  group.position.set(...step.position);
+  group.visible = false;
+
+  const disc = new THREE.Mesh(
+    new THREE.CircleGeometry(0.82, 32),
+    new THREE.MeshBasicMaterial({
+      color: 0x4def45,
+      transparent: true,
+      opacity: 0.28,
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.72, 0.91, 32),
+    new THREE.MeshBasicMaterial({
+      color: 0x9dff6f,
+      transparent: true,
+      opacity: 1,
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  disc.rotation.x = -Math.PI / 2;
+  ring.rotation.x = -Math.PI / 2;
+  disc.renderOrder = 40;
+  ring.renderOrder = 41;
+
+  const arrow = new THREE.Group();
+  const arrowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x37e72f,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.55, 4), arrowMaterial);
+  const stem = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.48, 0.2), arrowMaterial);
+  tip.rotation.z = Math.PI;
+  stem.position.y = 0.42;
+  tip.renderOrder = 42;
+  stem.renderOrder = 42;
+  arrow.position.y = 1.5;
+  arrow.userData.baseY = arrow.position.y;
+  arrow.add(tip, stem);
+  group.userData.arrow = arrow;
+  group.add(disc, ring, arrow);
+  return group;
 }
 
 function createFlyingCash() {
@@ -248,8 +469,11 @@ export class ShopProgressionSystem {
     this.stageIndex = 0;
     this.revision = 0;
     this.lastElapsed = 0;
+    this.lastGuidedStepId = null;
+    this.customersOpen = false;
     this.reveals = [];
     this.pads = new Map();
+    this.waypoints = new Map();
     this.cashFlights = [];
 
     STORY_STEPS.filter(({ type }) => type === 'purchase').forEach((step) => {
@@ -257,23 +481,30 @@ export class ShopProgressionSystem {
       this.pads.set(step.id, pad);
       this.group.add(pad.group);
     });
+    STORY_STEPS.filter(({ type }) => type === 'location').forEach((step) => {
+      const waypoint = createWaypointMarker(step);
+      this.waypoints.set(step.id, waypoint);
+      this.group.add(waypoint);
+    });
     for (let index = 0; index < MAX_CASH_FLIGHTS; index += 1) {
       const flight = createFlyingCash();
       this.cashFlights.push(flight);
       this.group.add(flight);
     }
 
-    this.iceCreamShop.setUnlockedDiningTables(STARTING_TABLES);
-    this.characterSystem.setUnlockedDiningTables(STARTING_TABLES);
-    this.productionSystem.setUnlockedFlavors(STARTING_FLAVORS);
+    this.iceCreamShop.setCounterUnlocked(false);
+    this.iceCreamShop.setUnlockedDiningTables([]);
+    this.characterSystem.setUnlockedDiningTables([]);
+    this.characterSystem.setCustomerFlowEnabled(false);
+    this.productionSystem.setSupportStationsVisible(false);
+    this.productionSystem.setUnlockedFlavors([]);
     this.hiringSystem.setHiringAvailable('gym-manager', false);
     this.hiringSystem.setHiringAvailable('wc-manager', false);
-    this._advanceCompletedSteps(0);
-    this._syncActiveStep();
+    this._syncActiveStep(true);
   }
 
   get activeStep() {
-    return STORY_STEPS[this.stageIndex] ?? null;
+    return STORY_STEPS[this.stageIndex] || null;
   }
 
   get complete() {
@@ -281,11 +512,13 @@ export class ShopProgressionSystem {
   }
 
   get nextTitle() {
-    return this.activeStep?.title ?? 'Ice cream shop mastered!';
+    return this.activeStep ? this.activeStep.title : 'Ice cream shop mastered!';
   }
 
   get nextDetail() {
-    return this.activeStep?.detail ?? 'Four flavours, expanded seating, trained staff, HR and GM are all active';
+    return this.activeStep
+      ? this.activeStep.detail
+      : 'Four flavours, expanded seating, trained staff, HR and GM are all active';
   }
 
   get progressPercent() {
@@ -301,15 +534,46 @@ export class ShopProgressionSystem {
     return this.characterSystem.unlockedDiningTableIds;
   }
 
+  get blocksOrders() {
+    const step = this.activeStep;
+    if (!this.customersOpen) return true;
+    if (!step || step.type === 'served') return false;
+    if (step.type === 'location' || step.type === 'collected') return true;
+    return this.productionSystem.cash >= this._fundingRemaining(step);
+  }
+
   _upgradeLevel(id) {
     if (id === 'workers') return this.hiringSystem.workerCount;
     if (id === 'worker-speed') return this.hiringSystem.workerSpeedLevel;
     return this.hiringSystem.upgrades.wcBoost;
   }
 
-  _isStepComplete(step) {
+  _upgradeCost(id) {
+    const card = this.hiringSystem.getUpgradeCards().find((candidate) => candidate.id === id);
+    return card && !card.maxed ? card.cost : 0;
+  }
+
+  _fundingRemaining(step) {
+    if (!step) return 0;
+    if (step.type === 'purchase') {
+      return Math.max(0, step.cost - (this.pads.get(step.id)?.paid || 0));
+    }
+    if (step.type === 'manager') {
+      const manager = this.hiringSystem.pads.find(({ definition }) => definition.id === step.managerId);
+      return manager ? Math.max(0, manager.definition.cost - manager.paid) : Infinity;
+    }
+    if (step.type === 'upgrade') return this._upgradeCost(step.upgradeId);
+    return 0;
+  }
+
+  _isStepComplete(step, playerPosition) {
+    if (step.type === 'location') {
+      return Boolean(playerPosition)
+        && squaredDistanceXZ(playerPosition, step.position) <= step.radius * step.radius;
+    }
     if (step.type === 'served') return this.productionSystem.servedCount >= step.target;
-    if (step.type === 'purchase') return (this.pads.get(step.id)?.paid ?? 0) >= step.cost;
+    if (step.type === 'collected') return this.productionSystem.totalCollectedCash >= step.target;
+    if (step.type === 'purchase') return (this.pads.get(step.id)?.paid || 0) >= step.cost;
     if (step.type === 'manager') {
       return this.hiringSystem.pads.some(({ definition, hired }) => (
         definition.id === step.managerId && hired
@@ -319,21 +583,43 @@ export class ShopProgressionSystem {
     return false;
   }
 
+  _previousTarget(step) {
+    return STORY_STEPS.slice(0, this.stageIndex).reduce((highest, candidate) => {
+      if (candidate.type !== step.type) return highest;
+      if (step.type === 'upgrade' && candidate.upgradeId !== step.upgradeId) return highest;
+      return Math.max(highest, candidate.target || 0);
+    }, 0);
+  }
+
   _activeStepProgress() {
     const step = this.activeStep;
     if (!step) return 1;
+    if (step.type === 'location') return 0;
     if (step.type === 'served') {
-      return THREE.MathUtils.clamp(this.productionSystem.servedCount / step.target, 0, 1);
+      const previousTarget = this._previousTarget(step);
+      return THREE.MathUtils.clamp(
+        (this.productionSystem.servedCount - previousTarget) / (step.target - previousTarget),
+        0,
+        1,
+      );
+    }
+    if (step.type === 'collected') {
+      return THREE.MathUtils.clamp(this.productionSystem.totalCollectedCash / step.target, 0, 1);
     }
     if (step.type === 'purchase') {
-      return THREE.MathUtils.clamp((this.pads.get(step.id)?.paid ?? 0) / step.cost, 0, 1);
+      return THREE.MathUtils.clamp((this.pads.get(step.id)?.paid || 0) / step.cost, 0, 1);
     }
     if (step.type === 'manager') {
       const manager = this.hiringSystem.pads.find(({ definition }) => definition.id === step.managerId);
       return manager ? THREE.MathUtils.clamp(manager.paid / manager.definition.cost, 0, 1) : 0;
     }
     if (step.type === 'upgrade') {
-      return THREE.MathUtils.clamp(this._upgradeLevel(step.upgradeId) / step.target, 0, 1);
+      const previousTarget = this._previousTarget(step);
+      return THREE.MathUtils.clamp(
+        (this._upgradeLevel(step.upgradeId) - previousTarget) / (step.target - previousTarget),
+        0,
+        1,
+      );
     }
     return 0;
   }
@@ -348,42 +634,71 @@ export class ShopProgressionSystem {
   }
 
   _completePurchase(step, elapsed) {
-    if (step.unlockType === 'table') {
-      const furniture = this.iceCreamShop.unlockDiningTable(step.unlockId);
+    let furniture = [];
+    if (step.unlockType === 'counter') {
+      furniture = this.iceCreamShop.unlockCounter();
+      this.productionSystem.setSupportStationsVisible(true);
+      furniture.push(...this.productionSystem.supports.map(({ model }) => model));
+    } else if (step.unlockType === 'table') {
+      furniture = this.iceCreamShop.unlockDiningTable(step.unlockId);
       this.characterSystem.unlockDiningTable(step.unlockId);
-      this._queueReveal(furniture, elapsed);
     } else if (step.unlockType === 'flavor') {
       const machine = this.productionSystem.unlockFlavor(step.unlockId);
-      this._queueReveal(machine ? [machine] : [], elapsed);
+      furniture = machine ? [machine] : [];
     }
+    this._queueReveal(furniture, elapsed);
+
+    if (step.opensCustomers && !this.customersOpen) {
+      this.customersOpen = true;
+      this.characterSystem.setCustomerFlowEnabled(true, elapsed);
+    }
+
     this.characterSystem.resolvePlayerCollisionOverlap();
     this.characterSystem.playPlayerAction('Celebrate', 0.7);
   }
 
-  _advanceCompletedSteps(elapsed) {
+  _advanceCompletedSteps(elapsed, playerPosition) {
     let advanced = false;
-    while (this.activeStep && this._isStepComplete(this.activeStep)) {
+    while (this.activeStep && this._isStepComplete(this.activeStep, playerPosition)) {
       const completedStep = this.activeStep;
       if (completedStep.type === 'purchase') this._completePurchase(completedStep, elapsed);
+      if (completedStep.type === 'location') {
+        this.characterSystem.playPlayerAction('Celebrate', 0.55);
+      }
       this.stageIndex += 1;
       this.revision += 1;
       advanced = true;
     }
+
     if (advanced && this.complete) {
       this.productionSystem.setStatus(
         'Ice cream shop story complete!',
-        'All four flavours, three dining areas, HR, GM and trained workers are active',
+        'The full shop, four flavours, expanded seating, HR, GM, and a three-person team are active',
       );
     }
   }
 
-  _syncActiveStep() {
+  _syncActiveStep(force = false) {
     const step = this.activeStep;
     this.pads.forEach((pad, id) => {
-      pad.group.visible = step?.id === id;
+      pad.group.visible = step && step.id === id;
     });
-    this.hiringSystem.setHiringAvailable('gym-manager', step?.managerId === 'gym-manager');
-    this.hiringSystem.setHiringAvailable('wc-manager', step?.managerId === 'wc-manager');
+    this.waypoints.forEach((waypoint, id) => {
+      waypoint.visible = step && step.id === id;
+    });
+    this.hiringSystem.setHiringAvailable(
+      'gym-manager',
+      Boolean(step && step.managerId === 'gym-manager'),
+    );
+    this.hiringSystem.setHiringAvailable(
+      'wc-manager',
+      Boolean(step && step.managerId === 'wc-manager'),
+    );
+
+    const nextStepId = step ? step.id : 'complete';
+    if (!force && this.lastGuidedStepId === nextStepId) return;
+    this.lastGuidedStepId = nextStepId;
+    if (step) this.productionSystem.setStatus(step.title, step.detail);
   }
 
   _spawnCashFlight(playerPosition, step, elapsed) {
@@ -426,7 +741,7 @@ export class ShopProgressionSystem {
 
   _payActivePad(delta, elapsed, playerPosition) {
     const step = this.activeStep;
-    if (step?.type !== 'purchase') return;
+    if (!step || step.type !== 'purchase') return;
     const pad = this.pads.get(step.id);
     if (!pad || squaredDistanceXZ(playerPosition, step.position) > PAYMENT_RADIUS * PAYMENT_RADIUS) {
       if (pad) pad.paymentBudget = 0;
@@ -449,18 +764,32 @@ export class ShopProgressionSystem {
     this.revision += 1;
   }
 
+  _updateWaypoint(elapsed) {
+    const step = this.activeStep;
+    if (!step || step.type !== 'location') return;
+    const waypoint = this.waypoints.get(step.id);
+    if (!waypoint || !waypoint.visible) return;
+    waypoint.scale.setScalar(1 + Math.sin(elapsed * 4.4) * 0.06);
+    const arrow = waypoint.userData.arrow;
+    arrow.position.y = arrow.userData.baseY + Math.sin(elapsed * 5.2) * 0.12;
+    arrow.rotation.y = elapsed * 1.35;
+  }
+
   update(delta, elapsed, playerPosition) {
     this.lastElapsed = elapsed;
     this._updateCashFlights(elapsed);
     this._updateReveals(elapsed);
-    this._advanceCompletedSteps(elapsed);
+    this._advanceCompletedSteps(elapsed, playerPosition);
     this._syncActiveStep();
     this._payActivePad(delta, elapsed, playerPosition);
-    this._advanceCompletedSteps(elapsed);
+    this._advanceCompletedSteps(elapsed, playerPosition);
     this._syncActiveStep();
+    this._updateWaypoint(elapsed);
 
-    const pad = this.activeStep?.type === 'purchase' ? this.pads.get(this.activeStep.id) : null;
-    if (pad?.group.visible) {
+    const pad = this.activeStep && this.activeStep.type === 'purchase'
+      ? this.pads.get(this.activeStep.id)
+      : null;
+    if (pad && pad.group.visible) {
       const pulse = 1 + Math.sin(elapsed * 4.4) * 0.04;
       pad.group.scale.setScalar(pulse);
     }

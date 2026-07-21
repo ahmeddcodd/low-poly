@@ -8,6 +8,8 @@ import { createIceCreamProduction } from './ice-cream-production.js';
 
 const MODEL_URL = new URL('../Untitled.glb', import.meta.url).href;
 const WALL_COLLIDER_PATTERN = /^Wall_.+_Solid_\d+$/;
+const ENTRANCE_TRIGGER_POINT = Object.freeze([-2.5, 7.25]);
+const ENTRANCE_TRIGGER_RADIUS = 1.75;
 
 function configureMaterial(material) {
   material.roughness = Math.max(material.roughness ?? 0.7, 0.58);
@@ -73,7 +75,7 @@ function createWallColliders(root) {
   return Object.freeze(colliders);
 }
 
-function startEntranceAnimation(root, animations) {
+function createEntranceController(root, animations) {
   const clip = animations.find((animation) => animation.name === 'Entrance_Open');
   if (!clip) return null;
 
@@ -81,8 +83,25 @@ function startEntranceAnimation(root, animations) {
   const action = mixer.clipAction(clip);
   action.setLoop(THREE.LoopOnce, 1);
   action.clampWhenFinished = true;
-  action.reset().play();
-  return mixer;
+  action.enabled = true;
+  action.reset();
+  return {
+    opened: false,
+    update(delta, playerPosition) {
+      if (!this.opened && playerPosition) {
+        const deltaX = playerPosition.x - ENTRANCE_TRIGGER_POINT[0];
+        const deltaZ = playerPosition.z - ENTRANCE_TRIGGER_POINT[1];
+        if (deltaX * deltaX + deltaZ * deltaZ <= ENTRANCE_TRIGGER_RADIUS ** 2) {
+          this.opened = true;
+          action.reset().play();
+        }
+      }
+      mixer.update(delta);
+    },
+    dispose() {
+      mixer.stopAllAction();
+    },
+  };
 }
 
 function applyLocalDebugStart(characterSystem) {
@@ -165,7 +184,7 @@ export async function createRestaurantScene(scene, onProgress) {
     ...iceCreamProduction.interactionColliders,
   ]);
   characterSystem.setPlayerColliders(playerColliders);
-  const mixer = startEntranceAnimation(restaurant, gltf.animations);
+  const entranceController = createEntranceController(restaurant, gltf.animations);
   const bounds = new THREE.Box3().setFromObject(restaurant);
   const size = bounds.getSize(new THREE.Vector3());
 
@@ -183,10 +202,11 @@ export async function createRestaurantScene(scene, onProgress) {
     productionColliders: iceCreamProduction.colliders,
     interactionColliders: iceCreamProduction.interactionColliders,
     playerColliders,
+    entranceController,
     bounds,
     size,
     update(delta, elapsed) {
-      mixer?.update(delta);
+      entranceController?.update(delta, characterSystem.player?.model.position);
       characterSystem.update(delta, elapsed);
       iceCreamProduction.update(delta, elapsed);
       iceCreamProduction.updateHiring(delta, elapsed);
@@ -197,7 +217,7 @@ export async function createRestaurantScene(scene, onProgress) {
       );
     },
     dispose() {
-      mixer?.stopAllAction();
+      entranceController?.dispose();
       progressionSystem.dispose();
       iceCreamProduction.dispose();
       iceCreamShop.dispose();

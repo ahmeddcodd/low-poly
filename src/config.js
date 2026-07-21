@@ -7,13 +7,13 @@ export const WORLD_CONFIG = Object.freeze({
     minX: -8.55,
     maxX: 15.75,
     minZ: -7.05,
-    maxZ: 7.05,
+    maxZ: 8.65,
   }),
   panBounds: Object.freeze({
     minX: -9.2,
     maxX: 18.6,
     minZ: -8,
-    maxZ: 9.7,
+    maxZ: 11.1,
   }),
   // Keep the complete authored Blender shell visible; cutaways must be opt-in.
   cutawayPrefixes: Object.freeze([]),

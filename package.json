@@ -11,7 +11,8 @@
     "build": "vite build",
     "build:vercel": "vite build --base=/",
     "preview": "vite preview --host 0.0.0.0",
-    "check": "vite build"
+    "test:gameplay": "node scripts/test-collision-recovery.mjs && node scripts/test-progression-economy.mjs && node scripts/test-progression-runtime.mjs",
+    "check": "vite build && npm run test:gameplay"
   },
   "keywords": ["threejs", "html5-game", "youtube-playables"],
   "license": "UNLICENSED",

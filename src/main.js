@@ -256,6 +256,15 @@ function animate(timestamp) {
     canvas.dataset.assignedServer = String(hiringSystem?.workerAutomation?.assignedServerIndex ?? '');
     canvas.dataset.storyStage = restaurantScene.progressionSystem.activeStep?.id ?? 'complete';
     canvas.dataset.storyProgress = String(restaurantScene.progressionSystem.progressPercent);
+    canvas.dataset.customersOpen = String(restaurantScene.progressionSystem.customersOpen);
+    canvas.dataset.counterUnlocked = String(restaurantScene.iceCreamShop.counterUnlocked);
+    canvas.dataset.supportStationsVisible = String(
+      restaurantScene.iceCreamProduction.supportStationsVisible,
+    );
+    canvas.dataset.totalCollectedCash = String(
+      restaurantScene.iceCreamProduction.totalCollectedCash,
+    );
+    canvas.dataset.entranceOpen = String(restaurantScene.entranceController?.opened ?? true);
     canvas.dataset.unlockedFlavors = restaurantScene.progressionSystem.unlockedFlavors.join(',');
     canvas.dataset.unlockedTables = restaurantScene.progressionSystem.unlockedTables.join(',');
     canvas.dataset.customerVisitCount = String(characterSystem.customerVisitCount);
@@ -297,7 +306,7 @@ async function boot() {
       characters: restaurantScene.characterSystem.characters.length,
       player: restaurantScene.characterSystem.player?.definition.id,
       customers: restaurantScene.characterSystem.customers.length,
-      customerFlow: 'entrance -> order counter queue',
+      customerFlow: 'closed shop -> starter build -> entrance -> order counter queue',
       wallColliders: restaurantScene.wallColliders.length,
       furniture: restaurantScene.iceCreamShop.instances.length,
       furnitureColliders: restaurantScene.furnitureColliders.length,

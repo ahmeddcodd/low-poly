@@ -30,6 +30,12 @@ const DINING_FURNITURE_IDS = Object.freeze({
   'dining-set-north': Object.freeze(['dining-set-north']),
   'dining-set-center': Object.freeze(['dining-set-center']),
 });
+const COUNTER_FURNITURE_IDS = Object.freeze([
+  'ice-cream-display',
+  'main-serving-counter',
+  'counter-corner',
+  'counter-return',
+]);
 
 const COLLISION_PROXY_PATTERN = /^COL_/;
 const COLLIDER_PADDING = WORLD_CONFIG.playerCollisionRadius;
@@ -138,17 +144,22 @@ export async function createIceCreamShop(onProgress) {
 
   const instancesById = new Map(instances.map((instance) => [instance.userData.furnitureId, instance]));
   const unlockedDiningTables = new Set();
-  const setTableVisibility = (tableId, visible) => {
-    const furnitureIds = DINING_FURNITURE_IDS[tableId] ?? [];
+  let counterUnlocked = false;
+  const setFurnitureVisibility = (furnitureIds, visible) => {
     furnitureIds.forEach((furnitureId) => {
       const instance = instancesById.get(furnitureId);
       if (instance) instance.visible = visible;
       colliders.filter((collider) => collider.furnitureId === furnitureId)
         .forEach((collider) => { collider.enabled = visible; });
     });
+    return furnitureIds.map((id) => instancesById.get(id)).filter(Boolean);
+  };
+  const setTableVisibility = (tableId, visible) => {
+    const furnitureIds = DINING_FURNITURE_IDS[tableId] ?? [];
+    const furniture = setFurnitureVisibility(furnitureIds, visible);
     if (visible) unlockedDiningTables.add(tableId);
     else unlockedDiningTables.delete(tableId);
-    return furnitureIds.map((id) => instancesById.get(id)).filter(Boolean);
+    return furniture;
   };
   const setUnlockedDiningTables = (tableIds) => {
     const nextUnlocked = new Set(tableIds);
@@ -156,16 +167,28 @@ export async function createIceCreamShop(onProgress) {
       setTableVisibility(tableId, nextUnlocked.has(tableId));
     });
   };
-  setUnlockedDiningTables(['compact-table']);
+  const setCounterUnlocked = (unlocked) => {
+    counterUnlocked = Boolean(unlocked);
+    return setFurnitureVisibility(COUNTER_FURNITURE_IDS, counterUnlocked);
+  };
+  setCounterUnlocked(false);
+  setUnlockedDiningTables([]);
 
   return {
     group,
     instances: Object.freeze(instances),
     colliders,
+    get counterUnlocked() {
+      return counterUnlocked;
+    },
     get unlockedDiningTableIds() {
       return [...unlockedDiningTables];
     },
     setUnlockedDiningTables,
+    setCounterUnlocked,
+    unlockCounter() {
+      return setCounterUnlocked(true);
+    },
     unlockDiningTable(tableId) {
       return setTableVisibility(tableId, true);
     },
