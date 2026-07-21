@@ -141,7 +141,8 @@ export class WorkerAutomationSystem {
   setWorkerCount(count) {
     const previousCount = this.workerCount;
     const nextCount = THREE.MathUtils.clamp(Math.floor(count), 0, this.workers.length);
-    if (nextCount === 0) {
+    const gainedFirstServer = previousCount === 0 && nextCount > 0;
+    if (nextCount === 0 || gainedFirstServer) {
       this.assignedOrder = null;
       this.assignedServerIndex = null;
     }

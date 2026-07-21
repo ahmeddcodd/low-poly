@@ -52,6 +52,10 @@ const system = new WorkerAutomationSystem(makeSourceCharacter(), {}, production)
 system.setWorkerCount(99);
 assert.equal(system.workerCount, 2);
 assert.deepEqual(system.workers.map(({ role }) => role), ['server', 'cleaner']);
+system.setWorkerCount(0);
+system.update(0.016, 0.1);
+assert.equal(system.assignedOrder, strawberryCup);
+assert.equal(system.assignedServerIndex, null);
 system.setWorkerCount(1);
 const cashier = system.workers[0];
 const cupPoint = production.stationPoints.get('cup');
