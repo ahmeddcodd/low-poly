@@ -2,6 +2,8 @@ import * as THREE from 'three';
 
 export const STARTING_CASH = 500;
 export const STORY_SERVICE_GOAL = 30;
+export const TUTORIAL_COLLECTION_TARGET = 15;
+
 const PAYMENT_RADIUS = 0.95;
 const PAYMENT_RATE = 42;
 const CASH_PER_FLIGHT = 4;
@@ -278,6 +280,11 @@ const SIMPLE_STEP_OVERRIDES = Object.freeze({
     target: 1,
     title: 'Serve your first customer',
     detail: 'Prepare the requested ice cream and deliver it at the counter',
+  }),
+  'first-collection': Object.freeze({
+    target: TUTORIAL_COLLECTION_TARGET,
+    title: 'Collect your first payment',
+    detail: 'Walk to the green cash stack on the left of the counter',
   }),
   'north-seating': Object.freeze({
     id: 'expand-seating',

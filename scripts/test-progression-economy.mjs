@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { STARTING_CASH, STORY_SERVICE_GOAL, STORY_STEPS } from '../src/progression-system.js';
+import { STARTING_CASH, STORY_SERVICE_GOAL, STORY_STEPS, TUTORIAL_COLLECTION_TARGET } from '../src/progression-system.js';
 
 const starterSteps = STORY_STEPS.slice(1, 4);
 assert.deepEqual(
@@ -15,6 +15,9 @@ const servedTargets = STORY_STEPS
 assert.deepEqual(servedTargets, [1, STORY_SERVICE_GOAL]);
 assert.equal(STORY_SERVICE_GOAL, 30);
 assert.equal(STORY_STEPS.length, 15);
+const tutorialCollectionStep = STORY_STEPS.find(({ id }) => id === 'first-collection');
+assert.equal(tutorialCollectionStep.target, TUTORIAL_COLLECTION_TARGET);
+assert.equal(TUTORIAL_COLLECTION_TARGET, 15);
 
 const flavorUnlocks = STORY_STEPS
   .filter(({ unlockType }) => unlockType === 'flavor')

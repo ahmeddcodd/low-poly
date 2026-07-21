@@ -208,6 +208,7 @@ export class TableCleanupSystem {
     this.disposal = null;
     this.playerDisposalComplete = null;
     this.lidState = 'closed';
+    this.tutorialGuidanceVisible = true;
 
     characterSystem.diningTables.forEach((table) => {
       const cluster = createGarbageCluster(this.garbageKit, `Table_Garbage_${table.id}`);
@@ -250,6 +251,11 @@ export class TableCleanupSystem {
 
   get isCarrying() {
     return this.carryingTableId !== null;
+  }
+
+  setTutorialGuidanceVisible(visible) {
+    this.tutorialGuidanceVisible = Boolean(visible);
+    this._syncVisuals();
   }
 
   _getWorkerCarryRig(workerModel) {
@@ -362,9 +368,13 @@ export class TableCleanupSystem {
       visual.batches.forEach((batch, index) => {
         batch.visible = index < table.garbageCount;
       });
-      visual.marker.visible = !this.isCarrying && this.characterSystem.canCleanTable(table.id);
+      visual.marker.visible = this.tutorialGuidanceVisible
+        && !this.isCarrying
+        && this.characterSystem.canCleanTable(table.id);
     });
-    this.binMarker.visible = this.isCarrying && this.disposal?.owner !== 'player';
+    this.binMarker.visible = this.tutorialGuidanceVisible
+      && this.isCarrying
+      && this.disposal?.owner !== 'player';
   }
 
   _pulseMarkers(elapsed) {

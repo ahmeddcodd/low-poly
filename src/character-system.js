@@ -447,6 +447,10 @@ export class CharacterSystem {
     this.playerSpeedMultiplier = THREE.MathUtils.clamp(Number(multiplier) || 1, 1, 2);
   }
 
+  setTutorialGuidanceVisible(visible) {
+    this.playerMarker.visible = Boolean(visible);
+  }
+
   setPlayerColliders(colliders) {
     this.playerColliders = colliders;
     this.resolvePlayerCollisionOverlap();

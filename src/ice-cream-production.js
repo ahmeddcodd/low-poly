@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { WORLD_CONFIG } from './config.js';
 import { TableCleanupSystem } from './table-cleanup-system.js';
 import { HiringSystem } from './hiring-system.js';
-import { STORY_SERVICE_GOAL } from './progression-system.js';
+import { STORY_SERVICE_GOAL, TUTORIAL_COLLECTION_TARGET } from './progression-system.js';
 
 const MACHINE_DEFINITIONS = Object.freeze([
   Object.freeze({
@@ -478,6 +478,7 @@ export class IceCreamProductionSystem {
     this.supportsScene = supportsScene;
     this.stationPoints = new Map();
     this.markers = new Map();
+    this.tutorialGuidanceActive = true;
     this.characterSystem = null;
     this.carryRig = new THREE.Group();
     this.carryRig.name = 'Worker_IceCream_Tray';
@@ -612,10 +613,23 @@ export class IceCreamProductionSystem {
       ...this.tableCleanup.colliders,
       ...this.hiringSystem.colliders,
     ]);
+    this.setTutorialGuidanceActive(this.tutorialGuidanceActive);
   }
 
   bindProgressionSystem(progressionSystem) {
     this.progressionSystem = progressionSystem;
+  }
+
+  setTutorialGuidanceActive(active) {
+    this.tutorialGuidanceActive = Boolean(active);
+    this.characterSystem?.setTutorialGuidanceVisible(this.tutorialGuidanceActive);
+    this.tableCleanup?.setTutorialGuidanceVisible(this.tutorialGuidanceActive);
+    this.markers.forEach((marker, id) => {
+      marker.visible = this.tutorialGuidanceActive && id === this.targetMarkerId;
+    });
+    if (this.cashMarker) {
+      this.cashMarker.visible = this.tutorialGuidanceActive && this.pendingCash > 0;
+    }
   }
 
   get unlockedFlavorIds() {
@@ -744,7 +758,7 @@ export class IceCreamProductionSystem {
     this.cashPile.bills.instanceMatrix.needsUpdate = true;
     this.cashPile.accents.instanceMatrix.needsUpdate = true;
     this.cashPile.group.visible = this.pendingCash > 0;
-    this.cashMarker.visible = this.pendingCash > 0;
+    this.cashMarker.visible = this.tutorialGuidanceActive && this.pendingCash > 0;
   }
 
   _addPendingCash(amount) {
@@ -762,6 +776,9 @@ export class IceCreamProductionSystem {
     const collected = this.pendingCash;
     this.cash += collected;
     this.totalCollectedCash += collected;
+    if (this.totalCollectedCash >= TUTORIAL_COLLECTION_TARGET) {
+      this.setTutorialGuidanceActive(false);
+    }
     this.pendingCash = 0;
     this.pendingPayments = 0;
     this.lastCollectedAmount = collected;
@@ -780,12 +797,12 @@ export class IceCreamProductionSystem {
     if (event.type === 'picked-up') {
       this.suspendedTargetMarkerId = this.targetMarkerId;
       this._setTargetMarker(null);
-      this._setStatus('Take the garbage to the trash bin', 'Carry it to the glowing green bin across the dining room');
+      this._setStatus('Take the garbage to the trash bin', 'Carry it to the green trash bin across the dining room');
       return true;
     }
 
     if (event.type === 'carrying') {
-      this._setStatus('Throw away the table garbage', 'Walk to the glowing green trash bin to finish cleaning');
+      this._setStatus('Throw away the table garbage', 'Walk to the green trash bin to finish cleaning');
       return true;
     }
 
@@ -852,15 +869,16 @@ export class IceCreamProductionSystem {
   }
 
   _setStatus(title, detail) {
-    if (this.status.title === title && this.status.detail === detail) return;
-    this.status = Object.freeze({ title, detail });
+    const resolvedDetail = this.tutorialGuidanceActive ? detail : detail.replaceAll('glowing ', '');
+    if (this.status.title === title && this.status.detail === resolvedDetail) return;
+    this.status = Object.freeze({ title, detail: resolvedDetail });
     this.statusRevision += 1;
   }
 
   _setTargetMarker(markerId) {
     this.targetMarkerId = markerId;
     this.markers.forEach((marker, id) => {
-      marker.visible = id === markerId;
+      marker.visible = this.tutorialGuidanceActive && id === markerId;
     });
   }
 
@@ -878,7 +896,7 @@ export class IceCreamProductionSystem {
     this._setTargetMarker(`station-${container}`);
     this._setStatus(
       `Pick up a ${container}`,
-      `Walk to the glowing ${container} dispenser for the ${flavor} order`,
+      `Walk to the ${container} dispenser for the ${flavor} order`,
     );
     return true;
   }
@@ -1010,7 +1028,7 @@ export class IceCreamProductionSystem {
         } else if (this.characterSystem.cleanableTableCount > 0) {
           this._setStatus(
             'A dining table needs cleaning',
-            'Pick up the glowing garbage, then carry it to the green trash bin',
+            'Pick up the table garbage, then carry it to the green trash bin',
           );
         } else {
           this._setStatus(
@@ -1037,7 +1055,7 @@ export class IceCreamProductionSystem {
         this._setStatus(
           this.characterSystem.cleanableTableCount > 0 ? 'Clean a table for this customer' : 'Waiting for diners to finish',
           this.characterSystem.cleanableTableCount > 0
-            ? 'Pick up the glowing garbage and throw it in the green trash bin'
+            ? 'Pick up the table garbage and throw it in the green trash bin'
             : 'The completed order is safe at the counter until a table becomes cleanable',
         );
         return;
@@ -1074,7 +1092,7 @@ export class IceCreamProductionSystem {
       this._setTargetMarker(`machine-${this.activeOrder.flavor}`);
       this._setStatus(
         `Make ${this.activeOrder.flavor} ice cream`,
-        `Take the ${this.activeOrder.container} to the glowing ${this.activeOrder.flavor} machine`,
+        `Take the ${this.activeOrder.container} to the ${this.activeOrder.flavor} machine`,
       );
       return;
     }
@@ -1106,7 +1124,7 @@ export class IceCreamProductionSystem {
       this._setTargetMarker(`station-${finishStation}`);
       this._setStatus(
         this.activeOrder.container === 'cup' ? 'Add a spoon and wafer' : 'Add the finishing topping',
-        `Walk to the glowing ${finishStation === 'spoon' ? 'spoon dispenser' : 'topping station'}`,
+        `Walk to the ${finishStation === 'spoon' ? 'spoon dispenser' : 'topping station'}`,
       );
       return;
     }
@@ -1120,7 +1138,7 @@ export class IceCreamProductionSystem {
       this._setTargetMarker('serve');
       this._setStatus(
         `Serve the ${this.activeOrder.flavor} ${this.activeOrder.container}`,
-        'Take the completed tray to the glowing staff point behind the counter',
+        'Take the completed tray to the staff point behind the counter',
       );
       return;
     }
@@ -1147,7 +1165,7 @@ export class IceCreamProductionSystem {
           this._setStatus(
             this.characterSystem.cleanableTableCount > 0 ? 'Clean a table to free seats' : 'Waiting for a free table',
             this.characterSystem.cleanableTableCount > 0
-              ? 'Pick up the glowing table garbage and throw it in the trash bin'
+              ? 'Pick up the table garbage and throw it in the trash bin'
               : 'The completed order is waiting safely at the counter',
           );
         }
