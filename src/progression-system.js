@@ -116,16 +116,8 @@ export const STORY_STEPS = Object.freeze([
     id: 'worker-sales',
     type: 'served',
     target: 9,
-    title: 'Serve 9 customers',
-    detail: 'Work with your new employee to fund team training',
-  }),
-  Object.freeze({
-    id: 'worker-speed',
-    type: 'upgrade',
-    upgradeId: 'worker-speed',
-    target: 1,
-    title: 'Train the ice cream team',
-    detail: 'Buy the first Worker speed upgrade in the HR office',
+    title: 'Keep your first worker serving',
+    detail: 'The server now prepares each order while you manage the growing shop',
   }),
   Object.freeze({
     id: 'flavour-fund',
@@ -178,22 +170,14 @@ export const STORY_STEPS = Object.freeze([
     upgradeId: 'workers',
     target: 2,
     title: 'Hire a second worker',
-    detail: 'Add an employee who can prepare orders and help with cleaning',
+    detail: 'Add a dedicated cleaner who removes leftovers and carries them to the trash',
   }),
   Object.freeze({
-    id: 'training-fund',
+    id: 'team-sales',
     type: 'served',
     target: 21,
     title: 'Serve 21 customers',
-    detail: 'Let the larger team earn cash for advanced training',
-  }),
-  Object.freeze({
-    id: 'second-speed',
-    type: 'upgrade',
-    upgradeId: 'worker-speed',
-    target: 2,
-    title: 'Upgrade worker speed again',
-    detail: 'Purchase level 2 Worker speed from HR',
+    detail: 'The server handles orders while the cleaner keeps tables available',
   }),
   Object.freeze({
     id: 'manager-fund',
@@ -248,15 +232,7 @@ export const STORY_STEPS = Object.freeze([
     type: 'served',
     target: 34,
     title: 'Serve 34 customers',
-    detail: 'Use all four flavours to fund one more specialist worker',
-  }),
-  Object.freeze({
-    id: 'third-worker',
-    type: 'upgrade',
-    upgradeId: 'workers',
-    target: 3,
-    title: 'Hire a third worker',
-    detail: 'Complete a three-person team for counter, orders, and cleaning',
+    detail: 'Run the complete two-worker team through the final flavour rush',
   }),
   Object.freeze({
     id: 'grand-finale',
@@ -518,7 +494,7 @@ export class ShopProgressionSystem {
   get nextDetail() {
     return this.activeStep
       ? this.activeStep.detail
-      : 'Four flavours, expanded seating, trained staff, HR and GM are all active';
+      : 'Four flavours, expanded seating, two-role staff, HR and GM are all active';
   }
 
   get progressPercent() {
@@ -535,11 +511,7 @@ export class ShopProgressionSystem {
   }
 
   get blocksOrders() {
-    const step = this.activeStep;
-    if (!this.customersOpen) return true;
-    if (!step || step.type === 'served') return false;
-    if (step.type === 'location' || step.type === 'collected') return true;
-    return this.productionSystem.cash >= this._fundingRemaining(step);
+    return !this.customersOpen;
   }
 
   _upgradeLevel(id) {
@@ -548,23 +520,6 @@ export class ShopProgressionSystem {
     return this.hiringSystem.upgrades.wcBoost;
   }
 
-  _upgradeCost(id) {
-    const card = this.hiringSystem.getUpgradeCards().find((candidate) => candidate.id === id);
-    return card && !card.maxed ? card.cost : 0;
-  }
-
-  _fundingRemaining(step) {
-    if (!step) return 0;
-    if (step.type === 'purchase') {
-      return Math.max(0, step.cost - (this.pads.get(step.id)?.paid || 0));
-    }
-    if (step.type === 'manager') {
-      const manager = this.hiringSystem.pads.find(({ definition }) => definition.id === step.managerId);
-      return manager ? Math.max(0, manager.definition.cost - manager.paid) : Infinity;
-    }
-    if (step.type === 'upgrade') return this._upgradeCost(step.upgradeId);
-    return 0;
-  }
 
   _isStepComplete(step, playerPosition) {
     if (step.type === 'location') {
@@ -673,7 +628,7 @@ export class ShopProgressionSystem {
     if (advanced && this.complete) {
       this.productionSystem.setStatus(
         'Ice cream shop story complete!',
-        'The full shop, four flavours, expanded seating, HR, GM, and a three-person team are active',
+        'The full shop, four flavours, expanded seating, HR, GM, and the two-worker team are active',
       );
     }
   }

@@ -9,24 +9,24 @@ const PAYMENT_RADIUS = 0.9;
 const CASH_PER_FLIGHT = 4;
 const FLIGHT_DURATION = 0.48;
 const MAX_CASH_FLIGHTS = 18;
-const MAX_WORKER_LEVEL = 4;
-const BASE_WORKER_SPEED = 1.45;
+const MAX_WORKER_COUNT = 2;
+const MAX_WORKER_SPEED_LEVEL = 4;
 
 const UPGRADE_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: 'workers',
     managerId: 'gym-manager',
-    title: 'Hire more workers',
-    detail: 'Adds another active ice cream worker',
-    maxLevel: MAX_WORKER_LEVEL,
-    costs: Object.freeze([30, 45, 65, 90]),
+    title: 'Hire shop workers',
+    detail: 'Level 1 hires the server; level 2 hires the table cleaner',
+    maxLevel: MAX_WORKER_COUNT,
+    costs: Object.freeze([30, 45]),
   }),
   Object.freeze({
     id: 'worker-speed',
     managerId: 'gym-manager',
     title: 'Worker speed',
     detail: 'Makes every hired worker move and work faster',
-    maxLevel: MAX_WORKER_LEVEL,
+    maxLevel: MAX_WORKER_SPEED_LEVEL,
     costs: Object.freeze([25, 40, 60, 85]),
   }),
   Object.freeze({
@@ -39,16 +39,6 @@ const UPGRADE_DEFINITIONS = Object.freeze([
   }),
 ]);
 
-const WORKER_ROUTES = Object.freeze([
-  Object.freeze([Object.freeze([-6.35, -3.15]), Object.freeze([-2.2, -3.15]), Object.freeze([1.25, -2.2])]),
-  Object.freeze([Object.freeze([-4.05, -3.75]), Object.freeze([0.55, -3.65]), Object.freeze([2.8, -2.45])]),
-  Object.freeze([Object.freeze([-7.1, -1.25]), Object.freeze([-4.5, -2.35]), Object.freeze([-1.25, -2.25])]),
-  Object.freeze([Object.freeze([2.75, -4.75]), Object.freeze([0.7, -3.2]), Object.freeze([-3.5, -3.2])]),
-]);
-
-function targetRotation(deltaX, deltaZ) {
-  return Math.atan2(deltaX, deltaZ);
-}
 
 const HIRE_DEFINITIONS = Object.freeze([
   Object.freeze({
@@ -238,33 +228,6 @@ function createManager(sourceCharacter, definition) {
   return { rig, model, mixer, action };
 }
 
-function createAutomatedWorker(sourceCharacter, route, index) {
-  const model = cloneSkeleton(sourceCharacter.model);
-  model.name = `Hired_IceCream_Worker_${index + 1}`;
-  model.getObjectByName('Worker_IceCream_Tray')?.removeFromParent();
-  model.position.set(route[0][0], sourceCharacter.model.position.y, route[0][1]);
-  model.rotation.set(0, targetRotation(route[1][0] - route[0][0], route[1][1] - route[0][1]), 0);
-  model.visible = false;
-  model.userData.characterId = `hired-worker-${index + 1}`;
-  model.userData.characterRole = 'employee';
-
-  const mixer = new THREE.AnimationMixer(model);
-  const walkClip = sourceCharacter.animations.find(({ name }) => name === 'Walk_Player');
-  const walkAction = walkClip ? mixer.clipAction(walkClip) : null;
-  if (walkAction) {
-    walkAction.reset();
-    walkAction.enabled = true;
-    walkAction.setLoop(THREE.LoopRepeat, Infinity);
-    walkAction.play();
-  }
-  return {
-    model,
-    mixer,
-    walkAction,
-    route,
-    routeIndex: 1,
-  };
-}
 
 function pointInsideBounds(position, bounds) {
   return position.x >= bounds.minX && position.x <= bounds.maxX

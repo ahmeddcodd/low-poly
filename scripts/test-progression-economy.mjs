@@ -23,10 +23,14 @@ assert.deepEqual(
   STORY_STEPS.filter(({ type }) => type === 'manager').map(({ managerId }) => managerId),
   ['gym-manager', 'wc-manager'],
 );
+assert.equal(
+  STORY_STEPS.some(({ upgradeId }) => upgradeId === 'worker-speed'),
+  false,
+);
 
 const managerCosts = { 'gym-manager': 60, 'wc-manager': 80 };
 const upgradeCosts = {
-  workers: [30, 45, 65, 90],
+  workers: [30, 45],
   'worker-speed': [25, 40, 60, 85],
   'wc-boost': [60],
 };

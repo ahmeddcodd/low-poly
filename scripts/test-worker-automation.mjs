@@ -49,6 +49,9 @@ function makeProductionSystem(order, stage = 'need-container') {
 const strawberryCup = Object.freeze({ flavor: 'strawberry', container: 'cup' });
 const production = makeProductionSystem(strawberryCup);
 const system = new WorkerAutomationSystem(makeSourceCharacter(), {}, production);
+system.setWorkerCount(99);
+assert.equal(system.workerCount, 2);
+assert.deepEqual(system.workers.map(({ role }) => role), ['server', 'cleaner']);
 system.setWorkerCount(1);
 const cashier = system.workers[0];
 const cupPoint = production.stationPoints.get('cup');
@@ -103,7 +106,7 @@ assert.deepEqual(production.calls.map(({ stage }) => stage), [
   'need-serve',
 ]);
 assert.ok(production.calls.every(({ index, role, flavor, container }) => (
-  index === 0 && role === 'cashier' && flavor === 'strawberry' && container === 'cup'
+  index === 0 && role === 'server' && flavor === 'strawberry' && container === 'cup'
 )));
 
 system.dispose();

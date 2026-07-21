@@ -452,6 +452,24 @@ export class CharacterSystem {
     this.resolvePlayerCollisionOverlap();
   }
 
+  isNavigationBlocked(x, z) {
+    const bounds = WORLD_CONFIG.playerBounds;
+    return x < bounds.minX
+      || x > bounds.maxX
+      || z < bounds.minZ
+      || z > bounds.maxZ
+      || this._playerCollides(x, z);
+  }
+
+  findNearestNavigationPoint(x, z) {
+    return findNearestClearPoint(
+      this.playerColliders,
+      WORLD_CONFIG.playerBounds,
+      x,
+      z,
+    );
+  }
+
   setUnlockedDiningTables(tableIds) {
     const unlocked = new Set(tableIds);
     this.diningTables.forEach((table) => {

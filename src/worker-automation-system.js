@@ -1,10 +1,15 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
+import { WORLD_CONFIG } from './config.js';
 
 const BASE_WORKER_SPEED = 1.55;
+const NAV_CELL_SIZE = 0.42;
+const NAV_GOAL_EPSILON = 0.06;
+const NAV_SEGMENT_STEP = 0.16;
+const NAV_MAX_SEARCH_NODES = 3500;
 const LOOPING_ACTIONS = new Set(['Idle', 'Walk_Player', 'Carry_Idle', 'Carry_Walk']);
-const SERVICE_ROLES = new Set(['cashier', 'server']);
+const SERVICE_ROLES = new Set(['server']);
 const FLAVOR_COLORS = Object.freeze({
   vanilla: 0xffe7a0,
   strawberry: 0xff7690,
@@ -13,9 +18,7 @@ const FLAVOR_COLORS = Object.freeze({
 });
 
 const ROLE_DEFINITIONS = Object.freeze([
-  Object.freeze({ role: 'cashier', label: 'Counter', post: Object.freeze([1.55, -1.72]), face: Object.freeze([1.55, 0.55]) }),
-  Object.freeze({ role: 'server', label: 'Ice cream', post: Object.freeze([-2.25, -3.1]), face: Object.freeze([1.55, -1.1]) }),
-  Object.freeze({ role: 'server', label: 'Ice cream', post: Object.freeze([-5.15, -3.1]), face: Object.freeze([-1.6, -3.1]) }),
+  Object.freeze({ role: 'server', label: 'Ice cream service', post: Object.freeze([1.55, -1.72]), face: Object.freeze([1.55, 0.55]) }),
   Object.freeze({ role: 'cleaner', label: 'Cleaning', post: Object.freeze([4.85, 4.65]), face: Object.freeze([-4.3, 3.6]) }),
 ]);
 
@@ -113,6 +116,10 @@ function createWorker(sourceCharacter, definition, index) {
     state: 'at-post',
     taskTableId: null,
     lastHandledStage: null,
+    navigationGoal: null,
+    navigationArrival: null,
+    navigationPath: [],
+    navigationIndex: 0,
   };
 }
 
@@ -143,6 +150,7 @@ export class WorkerAutomationSystem {
         worker.tray.group.visible = false;
         worker.state = 'at-post';
         worker.taskTableId = null;
+        this._resetNavigation(worker);
       }
     });
   }
@@ -175,21 +183,254 @@ export class WorkerAutomationSystem {
     }
   }
 
+  _resetNavigation(worker) {
+    worker.navigationGoal = null;
+    worker.navigationArrival = null;
+    worker.navigationPath.length = 0;
+    worker.navigationIndex = 0;
+  }
+
+  _isNavigationBlocked(x, z) {
+    const bounds = WORLD_CONFIG.playerBounds;
+    if (x < bounds.minX || x > bounds.maxX || z < bounds.minZ || z > bounds.maxZ) {
+      return true;
+    }
+    return Boolean(this.characterSystem.isNavigationBlocked?.(x, z));
+  }
+
+  _segmentIsClear(startX, startZ, endX, endZ) {
+    const distance = Math.hypot(endX - startX, endZ - startZ);
+    const steps = Math.max(1, Math.ceil(distance / NAV_SEGMENT_STEP));
+    for (let index = 1; index <= steps; index += 1) {
+      const ratio = index / steps;
+      const x = THREE.MathUtils.lerp(startX, endX, ratio);
+      const z = THREE.MathUtils.lerp(startZ, endZ, ratio);
+      if (this._isNavigationBlocked(x, z)) return false;
+    }
+    return true;
+  }
+
+  _planNavigation(worker, requestedTarget) {
+    const target = [requestedTarget[0], requestedTarget[1]];
+    worker.navigationGoal = target;
+    worker.navigationArrival = null;
+    worker.navigationPath.length = 0;
+    worker.navigationIndex = 0;
+
+    const startX = worker.model.position.x;
+    const startZ = worker.model.position.z;
+    if (this._segmentIsClear(startX, startZ, target[0], target[1])) {
+      worker.navigationArrival = target;
+      worker.navigationPath.push(target);
+      return true;
+    }
+
+    const bounds = WORLD_CONFIG.playerBounds;
+    const columns = Math.floor((bounds.maxX - bounds.minX) / NAV_CELL_SIZE) + 1;
+    const rows = Math.floor((bounds.maxZ - bounds.minZ) / NAV_CELL_SIZE) + 1;
+    const cellKey = (x, z) => z * columns + x;
+    const cellPoint = (x, z) => [
+      bounds.minX + x * NAV_CELL_SIZE,
+      bounds.minZ + z * NAV_CELL_SIZE,
+    ];
+    const clampedCell = (x, z) => ({
+      x: THREE.MathUtils.clamp(
+        Math.round((x - bounds.minX) / NAV_CELL_SIZE),
+        0,
+        columns - 1,
+      ),
+      z: THREE.MathUtils.clamp(
+        Math.round((z - bounds.minZ) / NAV_CELL_SIZE),
+        0,
+        rows - 1,
+      ),
+    });
+    const blockedCache = new Map();
+    const cellIsBlocked = (x, z) => {
+      if (x < 0 || x >= columns || z < 0 || z >= rows) return true;
+      const key = cellKey(x, z);
+      if (!blockedCache.has(key)) {
+        const point = cellPoint(x, z);
+        blockedCache.set(key, this._isNavigationBlocked(point[0], point[1]));
+      }
+      return blockedCache.get(key);
+    };
+    const nearestOpenCell = (origin) => {
+      const maxRadius = Math.max(columns, rows);
+      for (let radius = 0; radius <= maxRadius; radius += 1) {
+        for (let z = origin.z - radius; z <= origin.z + radius; z += 1) {
+          for (let x = origin.x - radius; x <= origin.x + radius; x += 1) {
+            if (radius > 0
+              && x !== origin.x - radius
+              && x !== origin.x + radius
+              && z !== origin.z - radius
+              && z !== origin.z + radius) {
+              continue;
+            }
+            if (!cellIsBlocked(x, z)) return { x, z };
+          }
+        }
+      }
+      return null;
+    };
+
+    const startCell = nearestOpenCell(clampedCell(startX, startZ));
+    const goalCell = nearestOpenCell(clampedCell(target[0], target[1]));
+    if (!startCell || !goalCell) return false;
+
+    const startKey = cellKey(startCell.x, startCell.z);
+    const goalKey = cellKey(goalCell.x, goalCell.z);
+    const heuristic = (x, z) => {
+      const deltaX = Math.abs(goalCell.x - x);
+      const deltaZ = Math.abs(goalCell.z - z);
+      return Math.max(deltaX, deltaZ) + (Math.SQRT2 - 1) * Math.min(deltaX, deltaZ);
+    };
+    const open = [{
+      x: startCell.x,
+      z: startCell.z,
+      key: startKey,
+      score: heuristic(startCell.x, startCell.z),
+    }];
+    const closed = new Set();
+    const cameFrom = new Map();
+    const costs = new Map([[startKey, 0]]);
+    const directions = [
+      [-1, 0, 1], [1, 0, 1], [0, -1, 1], [0, 1, 1],
+      [-1, -1, Math.SQRT2], [1, -1, Math.SQRT2],
+      [-1, 1, Math.SQRT2], [1, 1, Math.SQRT2],
+    ];
+    let reached = false;
+    let searched = 0;
+
+    while (open.length > 0 && searched < NAV_MAX_SEARCH_NODES) {
+      let bestIndex = 0;
+      for (let index = 1; index < open.length; index += 1) {
+        if (open[index].score < open[bestIndex].score) bestIndex = index;
+      }
+      const current = open.splice(bestIndex, 1)[0];
+      if (closed.has(current.key)) continue;
+      closed.add(current.key);
+      searched += 1;
+      if (current.key === goalKey) {
+        reached = true;
+        break;
+      }
+
+      directions.forEach(([offsetX, offsetZ, movementCost]) => {
+        const nextX = current.x + offsetX;
+        const nextZ = current.z + offsetZ;
+        if (cellIsBlocked(nextX, nextZ)) return;
+        if (offsetX !== 0 && offsetZ !== 0
+          && (cellIsBlocked(current.x + offsetX, current.z)
+            || cellIsBlocked(current.x, current.z + offsetZ))) {
+          return;
+        }
+        const nextKey = cellKey(nextX, nextZ);
+        if (closed.has(nextKey)) return;
+        const nextCost = costs.get(current.key) + movementCost;
+        if (nextCost >= (costs.get(nextKey) ?? Infinity)) return;
+        costs.set(nextKey, nextCost);
+        cameFrom.set(nextKey, current.key);
+        open.push({
+          x: nextX,
+          z: nextZ,
+          key: nextKey,
+          score: nextCost + heuristic(nextX, nextZ),
+        });
+      });
+    }
+    if (!reached) return false;
+
+    const reversePath = [];
+    let cursor = goalKey;
+    while (cursor !== startKey) {
+      const x = cursor % columns;
+      const z = Math.floor(cursor / columns);
+      reversePath.push(cellPoint(x, z));
+      cursor = cameFrom.get(cursor);
+      if (cursor === undefined) return false;
+    }
+    reversePath.reverse();
+
+    const goalPoint = cellPoint(goalCell.x, goalCell.z);
+    const exactTargetIsUsable = !this._isNavigationBlocked(target[0], target[1])
+      && this._segmentIsClear(goalPoint[0], goalPoint[1], target[0], target[1]);
+    const candidates = reversePath;
+    if (exactTargetIsUsable) candidates.push(target);
+    const arrival = exactTargetIsUsable ? target : goalPoint;
+    const smoothed = [];
+    let anchorX = startX;
+    let anchorZ = startZ;
+    let candidateIndex = 0;
+    while (candidateIndex < candidates.length) {
+      let furthest = candidateIndex;
+      for (let index = candidates.length - 1; index > candidateIndex; index -= 1) {
+        const candidate = candidates[index];
+        if (this._segmentIsClear(anchorX, anchorZ, candidate[0], candidate[1])) {
+          furthest = index;
+          break;
+        }
+      }
+      const waypoint = candidates[furthest];
+      smoothed.push(waypoint);
+      anchorX = waypoint[0];
+      anchorZ = waypoint[1];
+      candidateIndex = furthest + 1;
+    }
+    worker.navigationArrival = arrival;
+    worker.navigationPath.push(...smoothed);
+    return worker.navigationPath.length > 0;
+  }
+
   _moveWorker(worker, target, delta, carrying = false) {
-    const deltaX = target[0] - worker.model.position.x;
-    const deltaZ = target[1] - worker.model.position.z;
+    if (this._isNavigationBlocked(worker.model.position.x, worker.model.position.z)) {
+      const safePoint = this.characterSystem.findNearestNavigationPoint?.(
+        worker.model.position.x,
+        worker.model.position.z,
+      );
+      if (!safePoint) {
+        setWorkerAnimation(worker, carrying ? 'Carry_Idle' : 'Idle', this.speedLevel);
+        return false;
+      }
+      worker.model.position.x = safePoint.x;
+      worker.model.position.z = safePoint.z;
+      this._resetNavigation(worker);
+    }
+
+    const goalChanged = !worker.navigationGoal
+      || Math.hypot(
+        worker.navigationGoal[0] - target[0],
+        worker.navigationGoal[1] - target[1],
+      ) > NAV_GOAL_EPSILON;
+    if (goalChanged && !this._planNavigation(worker, target)) {
+      setWorkerAnimation(worker, carrying ? 'Carry_Idle' : 'Idle', this.speedLevel);
+      return false;
+    }
+    if (worker.navigationIndex >= worker.navigationPath.length) return true;
+
+    const waypoint = worker.navigationPath[worker.navigationIndex];
+    const deltaX = waypoint[0] - worker.model.position.x;
+    const deltaZ = waypoint[1] - worker.model.position.z;
     const distance = Math.hypot(deltaX, deltaZ);
     const speed = BASE_WORKER_SPEED * (1 + this.speedLevel * 0.22);
     const step = speed * delta;
     if (distance <= step + 0.025) {
-      worker.model.position.x = target[0];
-      worker.model.position.z = target[1];
-      return true;
+      worker.model.position.x = waypoint[0];
+      worker.model.position.z = waypoint[1];
+      worker.navigationIndex += 1;
+      return worker.navigationIndex >= worker.navigationPath.length;
     }
     const directionX = deltaX / Math.max(distance, 0.001);
     const directionZ = deltaZ / Math.max(distance, 0.001);
-    worker.model.position.x += directionX * step;
-    worker.model.position.z += directionZ * step;
+    const nextX = worker.model.position.x + directionX * step;
+    const nextZ = worker.model.position.z + directionZ * step;
+    if (this._isNavigationBlocked(nextX, nextZ)) {
+      this._resetNavigation(worker);
+      setWorkerAnimation(worker, carrying ? 'Carry_Idle' : 'Idle', this.speedLevel);
+      return false;
+    }
+    worker.model.position.x = nextX;
+    worker.model.position.z = nextZ;
     worker.model.rotation.y = targetRotation(directionX, directionZ);
     setWorkerAnimation(worker, carrying ? 'Carry_Walk' : 'Walk_Player', this.speedLevel);
     return false;
@@ -353,8 +594,8 @@ export class WorkerAutomationSystem {
     });
 
     this._updateServers(delta, elapsed);
-    const cleaner = this.workers[3];
-    if (this.workerCount > 3) this._updateCleaner(cleaner, delta, elapsed);
+    const cleaner = this.workers[1];
+    if (this.workerCount > 1) this._updateCleaner(cleaner, delta, elapsed);
   }
 
   dispose() {

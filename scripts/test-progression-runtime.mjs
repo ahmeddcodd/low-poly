@@ -33,7 +33,7 @@ const hiringSystem = {
   setHiringAvailable() {},
   getUpgradeCards() {
     return [
-      { id: 'workers', cost: [30, 45, 65, 90][this.workerCount] ?? 0, maxed: this.workerCount >= 4 },
+      { id: 'workers', cost: [30, 45][this.workerCount] ?? 0, maxed: this.workerCount >= 2 },
       { id: 'worker-speed', cost: [25, 40, 60, 85][this.workerSpeedLevel] ?? 0, maxed: this.workerSpeedLevel >= 4 },
       { id: 'wc-boost', cost: this.upgrades.wcBoost ? 0 : 60, maxed: Boolean(this.upgrades.wcBoost) },
     ];
@@ -92,6 +92,7 @@ assert.deepEqual(production.unlockedFlavorIds, ['vanilla', 'strawberry']);
 assert.deepEqual(character.unlockedDiningTableIds, ['compact-table']);
 assert.equal(character.customerFlowEnabled, true);
 assert.equal(system.activeStep.id, 'first-sales');
+assert.equal(system.blocksOrders, false);
 assert.equal(system._activeStepProgress(), 0);
 production.servedCount = 1;
 assert.equal(system._activeStepProgress(), 1 / 3);
@@ -100,6 +101,7 @@ production.servedCount = 0;
 production.cash = 10000;
 while (!system.complete) {
   const step = system.activeStep;
+  assert.equal(system.blocksOrders, false, 'open shop paused customer orders during progression');
   if (step.type === 'served') production.servedCount = step.target;
   if (step.type === 'collected') production.totalCollectedCash = step.target;
   if (step.type === 'manager') {
@@ -128,8 +130,8 @@ assert.deepEqual(production.unlockedFlavorIds, ['vanilla', 'strawberry', 'chocol
 assert.deepEqual(character.unlockedDiningTableIds, [
   'compact-table', 'dining-set-north', 'dining-set-center',
 ]);
-assert.equal(hiringSystem.workerCount, 3);
-assert.equal(hiringSystem.workerSpeedLevel, 2);
+assert.equal(hiringSystem.workerCount, 2);
+assert.equal(hiringSystem.workerSpeedLevel, 0);
 assert.equal(hiringSystem.upgrades.wcBoost, 1);
 system.dispose();
 
