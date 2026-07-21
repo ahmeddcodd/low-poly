@@ -11,7 +11,7 @@ globalThis.document = {
   },
 };
 
-const { ShopProgressionSystem } = await import('../src/progression-system.js');
+const { ShopProgressionSystem, STORY_STEPS } = await import('../src/progression-system.js');
 const makeObject = () => new THREE.Group();
 const furniture = new Map();
 const iceCreamShop = {
@@ -63,6 +63,7 @@ const character = {
 
 const system = new ShopProgressionSystem(iceCreamShop, production, character);
 assert.equal(system.activeStep.id, 'enter-shop');
+assert.equal(STORY_STEPS.length, 15);
 assert.equal(production.cash, 500);
 assert.equal(iceCreamShop.counterUnlocked, false);
 assert.deepEqual(production.unlockedFlavorIds, []);
@@ -91,11 +92,11 @@ assert.equal(production.supportStationsVisible, true);
 assert.deepEqual(production.unlockedFlavorIds, ['vanilla', 'strawberry']);
 assert.deepEqual(character.unlockedDiningTableIds, ['compact-table']);
 assert.equal(character.customerFlowEnabled, true);
-assert.equal(system.activeStep.id, 'first-sales');
+assert.equal(system.activeStep.id, 'first-sale');
 assert.equal(system.blocksOrders, false);
 assert.equal(system._activeStepProgress(), 0);
 production.servedCount = 1;
-assert.equal(system._activeStepProgress(), 1 / 3);
+assert.equal(system._activeStepProgress(), 1);
 production.servedCount = 0;
 
 production.cash = 10000;

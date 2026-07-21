@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { WORLD_CONFIG } from './config.js';
 import { TableCleanupSystem } from './table-cleanup-system.js';
 import { HiringSystem } from './hiring-system.js';
+import { STORY_SERVICE_GOAL } from './progression-system.js';
 
 const MACHINE_DEFINITIONS = Object.freeze([
   Object.freeze({
@@ -43,7 +44,6 @@ const INTERACTION_RADIUS = 0.82;
 const CASH_PICKUP_RADIUS = 1;
 const MAX_CASH_BILLS = 24;
 const STARTING_CASH = 500;
-const STORY_SERVICE_GOAL = 40;
 const ORDER_FLAVOR_COLORS = Object.freeze({
   vanilla: '#ffe7a0',
   strawberry: '#ff7690',

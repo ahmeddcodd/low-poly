@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { STARTING_CASH, STORY_STEPS } from '../src/progression-system.js';
+import { STARTING_CASH, STORY_SERVICE_GOAL, STORY_STEPS } from '../src/progression-system.js';
 
-const starterSteps = STORY_STEPS.slice(1, 5);
+const starterSteps = STORY_STEPS.slice(1, 4);
 assert.deepEqual(
   starterSteps.map(({ id }) => id),
-  ['starter-counter', 'vanilla-machine', 'strawberry-machine', 'starter-seating'],
+  ['starter-counter', 'starter-machines', 'starter-seating'],
 );
 assert.equal(starterSteps.reduce((total, step) => total + step.cost, 0), 450);
 assert.ok(starterSteps.at(-1).opensCustomers);
@@ -12,11 +12,15 @@ assert.ok(starterSteps.at(-1).opensCustomers);
 const servedTargets = STORY_STEPS
   .filter(({ type }) => type === 'served')
   .map(({ target }) => target);
-assert.ok(servedTargets.every((target, index) => index === 0 || target > servedTargets[index - 1]));
-assert.equal(servedTargets.at(-1), 40);
+assert.deepEqual(servedTargets, [1, STORY_SERVICE_GOAL]);
+assert.equal(STORY_SERVICE_GOAL, 30);
+assert.equal(STORY_STEPS.length, 15);
 
+const flavorUnlocks = STORY_STEPS
+  .filter(({ unlockType }) => unlockType === 'flavor')
+  .flatMap(({ unlockId, unlockIds }) => unlockIds || [unlockId]);
 assert.deepEqual(
-  STORY_STEPS.filter(({ unlockType }) => unlockType === 'flavor').map(({ unlockId }) => unlockId),
+  flavorUnlocks,
   ['vanilla', 'strawberry', 'chocolate', 'mint'],
 );
 assert.deepEqual(
@@ -38,21 +42,39 @@ const upgradeLevels = { workers: 0, 'worker-speed': 0, 'wc-boost': 0 };
 let cash = STARTING_CASH;
 let served = 0;
 let profitMultiplier = 1;
+let shopOpen = false;
+
+function earnSale() {
+  cash += (served % 2 === 0 ? 15 : 20) * profitMultiplier;
+  served += 1;
+}
+
+function ensureCash(cost) {
+  while (cash < cost) {
+    assert.equal(shopOpen, true, 'setup must be affordable before customers arrive');
+    earnSale();
+  }
+}
 
 STORY_STEPS.forEach((step) => {
   if (step.type === 'served') {
     while (served < step.target) {
-      cash += (served % 2 === 0 ? 15 : 20) * profitMultiplier;
-      served += 1;
+      earnSale();
     }
   } else if (step.type === 'purchase') {
+    ensureCash(step.cost);
     cash -= step.cost;
+    if (step.opensCustomers) shopOpen = true;
   } else if (step.type === 'manager') {
-    cash -= managerCosts[step.managerId];
+    const cost = managerCosts[step.managerId];
+    ensureCash(cost);
+    cash -= cost;
   } else if (step.type === 'upgrade') {
     while (upgradeLevels[step.upgradeId] < step.target) {
       const level = upgradeLevels[step.upgradeId];
-      cash -= upgradeCosts[step.upgradeId][level];
+      const cost = upgradeCosts[step.upgradeId][level];
+      ensureCash(cost);
+      cash -= cost;
       upgradeLevels[step.upgradeId] += 1;
     }
     if (step.upgradeId === 'wc-boost') profitMultiplier = 2;

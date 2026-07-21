@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 
 export const STARTING_CASH = 500;
+export const STORY_SERVICE_GOAL = 30;
 const PAYMENT_RADIUS = 0.95;
 const PAYMENT_RATE = 42;
 const CASH_PER_FLIGHT = 4;
 const CASH_FLIGHT_DURATION = 0.46;
 const MAX_CASH_FLIGHTS = 18;
 
-export const STORY_STEPS = Object.freeze([
+const STORY_CATALOG = Object.freeze([
   Object.freeze({
     id: 'enter-shop',
     type: 'location',
@@ -242,6 +243,64 @@ export const STORY_STEPS = Object.freeze([
     detail: 'Serve 40 customers to finish the ice cream shop story',
   }),
 ]);
+
+const SIMPLE_STORY_IDS = Object.freeze([
+  'enter-shop',
+  'starter-counter',
+  'vanilla-machine',
+  'starter-seating',
+  'first-sales',
+  'first-collection',
+  'hire-hr',
+  'first-worker',
+  'north-seating',
+  'chocolate-machine',
+  'second-worker',
+  'hire-gm',
+  'gm-boost',
+  'mint-machine',
+  'grand-finale',
+]);
+
+const SIMPLE_STEP_OVERRIDES = Object.freeze({
+  'vanilla-machine': Object.freeze({
+    id: 'starter-machines',
+    unlockIds: Object.freeze(['vanilla', 'strawberry']),
+    cost: 200,
+    position: Object.freeze([-5.2, 0.04, -3.45]),
+    label: '2 MACHINES',
+    footer: 'STARTER SETUP',
+    title: 'Install the starter machines',
+    detail: 'Invest $200 to add vanilla and strawberry',
+  }),
+  'first-sales': Object.freeze({
+    id: 'first-sale',
+    target: 1,
+    title: 'Serve your first customer',
+    detail: 'Prepare the requested ice cream and deliver it at the counter',
+  }),
+  'north-seating': Object.freeze({
+    id: 'expand-seating',
+    unlockIds: Object.freeze(['dining-set-north', 'dining-set-center']),
+    cost: 110,
+    position: Object.freeze([-6.5, 0.04, 3.75]),
+    label: '4 SEATS',
+    footer: 'DINING UPGRADE',
+    title: 'Expand the dining room',
+    detail: 'Invest $110 to add two more customer tables',
+  }),
+  'grand-finale': Object.freeze({
+    target: STORY_SERVICE_GOAL,
+    title: `Serve ${STORY_SERVICE_GOAL} customers`,
+    detail: 'Run your complete shop to finish the story',
+  }),
+});
+
+export const STORY_STEPS = Object.freeze(SIMPLE_STORY_IDS.map((id) => {
+  const baseStep = STORY_CATALOG.find((step) => step.id === id);
+  if (!baseStep) throw new Error(`Missing story step: ${id}`);
+  return Object.freeze({ ...baseStep, ...(SIMPLE_STEP_OVERRIDES[id] || {}) });
+}));
 
 function roundedRect(context, x, y, width, height, radius) {
   context.beginPath();
@@ -590,16 +649,23 @@ export class ShopProgressionSystem {
 
   _completePurchase(step, elapsed) {
     let furniture = [];
+    const unlockIds = step.unlockIds
+      ? [...step.unlockIds]
+      : (step.unlockId ? [step.unlockId] : []);
     if (step.unlockType === 'counter') {
       furniture = this.iceCreamShop.unlockCounter();
       this.productionSystem.setSupportStationsVisible(true);
       furniture.push(...this.productionSystem.supports.map(({ model }) => model));
     } else if (step.unlockType === 'table') {
-      furniture = this.iceCreamShop.unlockDiningTable(step.unlockId);
-      this.characterSystem.unlockDiningTable(step.unlockId);
+      unlockIds.forEach((unlockId) => {
+        furniture.push(...this.iceCreamShop.unlockDiningTable(unlockId));
+        this.characterSystem.unlockDiningTable(unlockId);
+      });
     } else if (step.unlockType === 'flavor') {
-      const machine = this.productionSystem.unlockFlavor(step.unlockId);
-      furniture = machine ? [machine] : [];
+      unlockIds.forEach((unlockId) => {
+        const machine = this.productionSystem.unlockFlavor(unlockId);
+        if (machine) furniture.push(machine);
+      });
     }
     this._queueReveal(furniture, elapsed);
 
