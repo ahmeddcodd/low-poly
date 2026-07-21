@@ -3,8 +3,8 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 
 const BASE_WORKER_SPEED = 1.55;
-const COUNTER_HANDOFF_RADIUS = 0.9;
 const LOOPING_ACTIONS = new Set(['Idle', 'Walk_Player', 'Carry_Idle', 'Carry_Walk']);
+const SERVICE_ROLES = new Set(['cashier', 'server']);
 const FLAVOR_COLORS = Object.freeze({
   vanilla: 0xffe7a0,
   strawberry: 0xff7690,
@@ -158,6 +158,12 @@ export class WorkerAutomationSystem {
     return this.workerCount > 0 && this.workers[0]?.model.visible;
   }
 
+  get orderAutomationActive() {
+    return this.workers.some((worker) => (
+      worker.index < this.workerCount && SERVICE_ROLES.has(worker.role) && worker.model.visible
+    ));
+  }
+
   _setServiceTray(worker, order, visible) {
     worker.tray.group.visible = visible;
     if (order?.flavor) {
@@ -217,7 +223,7 @@ export class WorkerAutomationSystem {
       const point = this.productionSystem.stationPoints.get(finishStation);
       return point ? [point.x, point.z] : null;
     }
-    if (stage === 'need-serve') {
+    if (stage === 'need-serve' || stage === 'serving' || stage === 'waiting-for-table') {
       const point = this.productionSystem.stationPoints.get('serve');
       return point ? [point.x, point.z] : null;
     }
@@ -226,7 +232,7 @@ export class WorkerAutomationSystem {
 
   _chooseServer() {
     const activeServers = this.workers.filter((worker) => (
-      worker.role === 'server' && worker.index < this.workerCount
+      SERVICE_ROLES.has(worker.role) && worker.index < this.workerCount
     ));
     if (activeServers.length === 0) return null;
     return activeServers[this.productionSystem.servedCount % activeServers.length];
@@ -243,14 +249,9 @@ export class WorkerAutomationSystem {
       });
     }
 
-    this.workers.filter((worker) => worker.role === 'server' && worker.index < this.workerCount)
+    this.workers.filter((worker) => SERVICE_ROLES.has(worker.role) && worker.index < this.workerCount)
       .forEach((worker) => {
         if (worker.index !== this.assignedServerIndex || !activeOrder) {
-          this._holdPost(worker, delta);
-          return;
-        }
-
-        if (stage === 'serving' || stage === 'waiting-for-table') {
           this._holdPost(worker, delta);
           return;
         }
@@ -264,11 +265,22 @@ export class WorkerAutomationSystem {
         }
         const arrived = this._moveWorker(worker, target, delta, carrying);
         if (!arrived) return;
-        setWorkerAnimation(worker, carrying ? 'Carry_Idle' : 'Idle', this.speedLevel);
         if (stage === 'need-serve') {
-          worker.state = 'handoff-ready';
+          worker.state = 'serving-customer';
+          if (worker.lastHandledStage === stage) return;
+          worker.lastHandledStage = stage;
+          setWorkerAnimation(worker, 'Serve', this.speedLevel, 0.08);
+          this.productionSystem.performWorkerStage(worker, elapsed);
           return;
         }
+        if (stage === 'serving' || stage === 'waiting-for-table') {
+          worker.state = stage === 'serving' ? 'serving-customer' : 'holding-order';
+          if (stage === 'waiting-for-table' || worker.currentAnimation !== 'Serve') {
+            setWorkerAnimation(worker, 'Carry_Idle', this.speedLevel);
+          }
+          return;
+        }
+        setWorkerAnimation(worker, carrying ? 'Carry_Idle' : 'Idle', this.speedLevel);
         worker.state = carrying ? 'preparing-order' : 'collecting-container';
         if (!['need-container', 'need-machine', 'need-finish'].includes(stage)) return;
         if (worker.lastHandledStage === stage) return;
@@ -276,64 +288,6 @@ export class WorkerAutomationSystem {
         setWorkerAnimation(worker, 'Pickup', this.speedLevel, 0.08);
         this.productionSystem.performWorkerStage(worker, elapsed);
       });
-  }
-
-  _updateCashier(worker, delta, elapsed) {
-    const { activeOrder, stage } = this.productionSystem;
-    const arrived = this._moveWorker(worker, worker.definition.post, delta, false);
-    if (!arrived) return;
-    worker.model.rotation.y = targetRotation(
-      worker.definition.face[0] - worker.model.position.x,
-      worker.definition.face[1] - worker.model.position.z,
-    );
-
-    if (!activeOrder) {
-      this._setServiceTray(worker, null, false);
-      worker.state = 'at-counter';
-      setWorkerAnimation(worker, 'Idle', this.speedLevel);
-      return;
-    }
-
-    if (stage === 'need-serve') {
-      const assignedServer = this.workers[this.assignedServerIndex];
-      const servePoint = this.productionSystem.stationPoints.get('serve');
-      const player = this.characterSystem.player?.model;
-      const playerHandoffReady = Boolean(
-        player
-        && this.characterSystem.playerCarrying
-        && servePoint
-        && (player.position.x - servePoint.x) ** 2 + (player.position.z - servePoint.z) ** 2
-          <= COUNTER_HANDOFF_RADIUS ** 2
-      );
-      const serverHandoffReady = assignedServer?.index < this.workerCount
-        && assignedServer.state === 'handoff-ready';
-      const handoffReady = playerHandoffReady || serverHandoffReady;
-      this._setServiceTray(worker, activeOrder, handoffReady);
-      if (!handoffReady) {
-        worker.state = 'waiting-for-order';
-        setWorkerAnimation(worker, 'Idle', this.speedLevel);
-        return;
-      }
-      worker.state = 'serving-customer';
-      if (worker.lastHandledStage === stage) return;
-      worker.lastHandledStage = stage;
-      setWorkerAnimation(worker, 'Serve', this.speedLevel, 0.08);
-      this.productionSystem.performWorkerStage(worker, elapsed);
-      return;
-    }
-
-    if (stage === 'serving' || stage === 'waiting-for-table') {
-      this._setServiceTray(worker, activeOrder, true);
-      worker.state = stage === 'serving' ? 'serving-customer' : 'holding-order';
-      if (stage === 'waiting-for-table' || worker.currentAnimation !== 'Serve') {
-        setWorkerAnimation(worker, 'Carry_Idle', this.speedLevel);
-      }
-      return;
-    }
-
-    this._setServiceTray(worker, null, false);
-    worker.state = 'taking-order';
-    setWorkerAnimation(worker, 'Idle', this.speedLevel);
   }
 
   _updateCleaner(worker, delta, elapsed) {
@@ -399,8 +353,6 @@ export class WorkerAutomationSystem {
     });
 
     this._updateServers(delta, elapsed);
-    const cashier = this.workers[0];
-    if (this.workerCount > 0) this._updateCashier(cashier, delta, elapsed);
     const cleaner = this.workers[3];
     if (this.workerCount > 3) this._updateCleaner(cleaner, delta, elapsed);
   }

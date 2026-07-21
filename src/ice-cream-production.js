@@ -139,6 +139,23 @@ function cloneAsset(sourceScene, name) {
   return clone;
 }
 
+export function orientConeProductUpright(root) {
+  let corrected = false;
+  root.traverse((object) => {
+    if (!object.isMesh || object.userData.coneUprightCorrected) return;
+    const isConeBody = object.name === 'Piece_Cone_Mesh' || /_Cone_Cone$/.test(object.name);
+    if (!isConeBody) return;
+    object.geometry.computeBoundingBox();
+    const bounds = object.geometry.boundingBox;
+    if (!bounds) return;
+    object.rotation.x += Math.PI;
+    object.position.y += bounds.min.y + bounds.max.y;
+    object.userData.coneUprightCorrected = true;
+    corrected = true;
+  });
+  return corrected;
+}
+
 function createColliders(group, records) {
   const padding = WORLD_CONFIG.playerCollisionRadius;
   const bounds = new THREE.Box3();
@@ -571,6 +588,7 @@ export class IceCreamProductionSystem {
 
     carryNames.forEach((name) => {
       const product = cloneAsset(this.productsScene, name);
+      if (name === PRODUCT_NAMES.cone || name.endsWith('_Cone')) orientConeProductUpright(product);
       product.name = `Carry_${name}`;
       product.position.set(0, 0.16, 0);
       product.scale.setScalar(name.startsWith('Piece_') ? 0.76 : 0.58);
@@ -680,6 +698,7 @@ export class IceCreamProductionSystem {
   _showCustomerProduct(customer, order) {
     const productName = PRODUCT_NAMES[order.flavor][order.container];
     const product = cloneAsset(this.productsScene, productName);
+    if (order.container === 'cone') orientConeProductUpright(product);
     const gripBone = customer.model.getObjectByName('RightHandProp');
     if (!gripBone) throw new Error(`Missing right-hand prop socket for ${customer.definition.id}`);
 
@@ -1028,6 +1047,23 @@ export class IceCreamProductionSystem {
       return;
     }
 
+    const workerAutomation = this.hiringSystem?.workerAutomation;
+    if (workerAutomation?.orderAutomationActive
+      && ['need-container', 'need-machine', 'need-finish', 'need-serve'].includes(this.stage)) {
+      const assignedWorker = workerAutomation.workers[workerAutomation.assignedServerIndex]
+        ?? workerAutomation.workers[0];
+      this._setTargetMarker(null);
+      if (this.activeCarryProduct) {
+        this._clearCarryProduct();
+        this.characterSystem.setPlayerCarrying(false);
+      }
+      this._setStatus(
+        `${assignedWorker?.label ?? 'Ice cream'} worker is preparing the order`,
+        `They are making the requested ${this.activeOrder.flavor} ${this.activeOrder.container}`,
+      );
+      return;
+    }
+
     if (this.stage === 'need-container') {
       const stationPoint = this.stationPoints.get(this.activeOrder.container);
       if (!stationPoint || !this._near(playerPosition, stationPoint)) return;
@@ -1059,7 +1095,12 @@ export class IceCreamProductionSystem {
     if (this.stage === 'dispensing') {
       if (elapsed < this.dispenseReadyAt) return;
       const productName = PRODUCT_NAMES[this.activeOrder.flavor][this.activeOrder.container];
-      this._setCarryProduct(productName);
+      if (this.hiringSystem?.workerAutomation?.orderAutomationActive) {
+        this._clearCarryProduct();
+        this.characterSystem.setPlayerCarrying(false);
+      } else {
+        this._setCarryProduct(productName);
+      }
       this.stage = 'need-finish';
       const finishStation = this.activeOrder.container === 'cup' ? 'spoon' : 'topping';
       this._setTargetMarker(`station-${finishStation}`);
@@ -1085,13 +1126,6 @@ export class IceCreamProductionSystem {
     }
 
     if (this.stage === 'need-serve') {
-      if (this.hiringSystem?.workerAutomation?.counterWorkerActive) {
-        this._setStatus(
-          `Counter worker is serving the ${this.activeOrder.flavor} ${this.activeOrder.container}`,
-          'The employee will hand the requested ice cream to the front customer',
-        );
-        return;
-      }
       const servePoint = this.stationPoints.get('serve');
       if (!servePoint || !this._near(playerPosition, servePoint)) return;
       this.characterSystem.playPlayerAction('Serve');
@@ -1143,6 +1177,7 @@ function addDisplayProducts(holder, productsScene) {
     const anchor = findAnchor(holder, `ServingSlot_0${index + 1}`);
     if (!anchor) return;
     const product = cloneAsset(productsScene, PRODUCT_NAMES[flavor].cone);
+    orientConeProductUpright(product);
     product.name = `Display_${flavor}`;
     product.scale.setScalar(0.4);
     configureObject(product);

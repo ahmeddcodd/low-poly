@@ -10,7 +10,7 @@ function makeSourceCharacter() {
   };
 }
 
-function makeProductionSystem(order, stage = 'need-serve') {
+function makeProductionSystem(order, stage = 'need-container') {
   const calls = [];
   return {
     activeOrder: order,
@@ -30,8 +30,17 @@ function makeProductionSystem(order, stage = 'need-serve') {
     tableCleanup: null,
     calls,
     performWorkerStage(worker) {
-      calls.push({ index: worker.index, role: worker.role, flavor: this.activeOrder.flavor, container: this.activeOrder.container });
-      if (this.stage === 'need-serve') this.stage = 'serving';
+      calls.push({
+        stage: this.stage,
+        index: worker.index,
+        role: worker.role,
+        flavor: this.activeOrder.flavor,
+        container: this.activeOrder.container,
+      });
+      if (this.stage === 'need-container') this.stage = 'need-machine';
+      else if (this.stage === 'need-machine') this.stage = 'dispensing';
+      else if (this.stage === 'need-finish') this.stage = 'need-serve';
+      else if (this.stage === 'need-serve') this.stage = 'serving';
       return true;
     },
   };
@@ -39,24 +48,39 @@ function makeProductionSystem(order, stage = 'need-serve') {
 
 const strawberryCup = Object.freeze({ flavor: 'strawberry', container: 'cup' });
 const production = makeProductionSystem(strawberryCup);
-const characterSystem = {
-  player: { model: new THREE.Group() },
-  playerCarrying: true,
-};
-const system = new WorkerAutomationSystem(makeSourceCharacter(), characterSystem, production);
+const system = new WorkerAutomationSystem(makeSourceCharacter(), {}, production);
 system.setWorkerCount(1);
-system.update(0.016, 1);
-assert.equal(production.calls.length, 0);
-assert.equal(system.workers[0].state, 'waiting-for-order');
-
-characterSystem.player.model.position.copy(production.stationPoints.get('serve'));
-system.update(0.016, 1.1);
-
 const cashier = system.workers[0];
+const cupPoint = production.stationPoints.get('cup');
+const counterStart = cashier.model.position.clone();
+const startDistance = counterStart.distanceTo(cupPoint);
+
+system.update(0.25, 0.5);
+assert.equal(system.assignedServerIndex, 0);
+assert.equal(production.stage, 'need-container');
+assert.equal(cashier.currentAnimation, 'Walk_Player');
+assert.ok(cashier.model.position.distanceTo(cupPoint) < startDistance);
+assert.notDeepEqual(cashier.model.position.toArray(), counterStart.toArray());
+
+cashier.model.position.copy(cupPoint);
+system.update(0.016, 1);
+
+assert.equal(system.orderAutomationActive, true);
 assert.equal(system.counterWorkerActive, true);
-assert.deepEqual(production.calls, [
-  { index: 0, role: 'cashier', flavor: 'strawberry', container: 'cup' },
-]);
+assert.equal(system.assignedServerIndex, 0);
+assert.equal(production.stage, 'need-machine');
+
+cashier.model.position.copy(production.machines.find(({ flavor }) => flavor === 'strawberry').standPoint);
+system.update(0.016, 2);
+assert.equal(production.stage, 'dispensing');
+
+production.stage = 'need-finish';
+cashier.model.position.copy(production.stationPoints.get('spoon'));
+system.update(0.016, 3);
+assert.equal(production.stage, 'need-serve');
+
+cashier.model.position.copy(production.stationPoints.get('serve'));
+system.update(0.016, 4);
 assert.equal(production.stage, 'serving');
 assert.equal(cashier.state, 'serving-customer');
 assert.equal(cashier.currentAnimation, 'Serve');
@@ -65,22 +89,22 @@ assert.equal(cashier.tray.cup.visible, true);
 assert.equal(cashier.tray.cone.visible, false);
 assert.equal(cashier.tray.scoopMaterial.color.getHex(), 0xff7690);
 
-production.activeOrder = Object.freeze({ flavor: 'vanilla', container: 'cone' });
-production.stage = 'need-machine';
-system.setWorkerCount(2);
-system.update(0.016, 2);
-assert.equal(system.assignedServerIndex, 1);
-assert.deepEqual(system._serverTarget(), [-6.4, -3.8]);
+system._setServiceTray(cashier, { flavor: 'vanilla', container: 'cone' }, true);
+assert.equal(cashier.tray.cone.visible, true);
+assert.equal(cashier.tray.cup.visible, false);
+assert.equal(cashier.tray.cone.rotation.x, Math.PI);
+assert.ok(cashier.tray.cone.position.y < cashier.tray.scoop.position.y);
+assert.equal(cashier.tray.scoopMaterial.color.getHex(), 0xffe7a0);
 
-production.activeOrder = Object.freeze({ flavor: 'strawberry', container: 'cup' });
-production.stage = 'need-serve';
-const server = system.workers[1];
-server.model.position.copy(production.stationPoints.get('serve'));
-system.update(0.016, 3);
-assert.equal(server.state, 'handoff-ready');
-assert.equal(production.calls.at(-1).index, 0);
-assert.equal(production.calls.at(-1).flavor, 'strawberry');
-assert.equal(production.calls.at(-1).container, 'cup');
+assert.deepEqual(production.calls.map(({ stage }) => stage), [
+  'need-container',
+  'need-machine',
+  'need-finish',
+  'need-serve',
+]);
+assert.ok(production.calls.every(({ index, role, flavor, container }) => (
+  index === 0 && role === 'cashier' && flavor === 'strawberry' && container === 'cup'
+)));
 
 system.dispose();
 console.log('worker automation tests passed');

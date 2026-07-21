@@ -11,7 +11,7 @@
     "build": "vite build",
     "build:vercel": "vite build --base=/",
     "preview": "vite preview --host 0.0.0.0",
-    "test:gameplay": "node scripts/test-collision-recovery.mjs && node scripts/test-progression-economy.mjs && node scripts/test-progression-runtime.mjs && node scripts/test-worker-automation.mjs",
+    "test:gameplay": "node scripts/test-collision-recovery.mjs && node scripts/test-progression-economy.mjs && node scripts/test-progression-runtime.mjs && node scripts/test-worker-automation.mjs && node scripts/test-product-orientation.mjs",
     "check": "vite build && npm run test:gameplay"
   },
   "keywords": ["threejs", "html5-game", "youtube-playables"],
