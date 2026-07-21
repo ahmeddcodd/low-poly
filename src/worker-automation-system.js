@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 
 const BASE_WORKER_SPEED = 1.55;
+const COUNTER_HANDOFF_RADIUS = 0.9;
 const LOOPING_ACTIONS = new Set(['Idle', 'Walk_Player', 'Carry_Idle', 'Carry_Walk']);
 const FLAVOR_COLORS = Object.freeze({
   vanilla: 0xffe7a0,
@@ -30,24 +31,31 @@ function createServiceTray() {
 
   const trayMaterial = new THREE.MeshStandardMaterial({ color: 0xe7f1ea, roughness: 0.68 });
   const coneMaterial = new THREE.MeshStandardMaterial({ color: 0xe4a95e, roughness: 0.76 });
+  const cupMaterial = new THREE.MeshStandardMaterial({ color: 0xf4f0e9, roughness: 0.7 });
   const scoopMaterial = new THREE.MeshStandardMaterial({ color: 0xffe7a0, roughness: 0.72 });
   const tray = new THREE.Mesh(new RoundedBoxGeometry(0.72, 0.07, 0.48, 14, 0.028), trayMaterial);
   const cone = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.34, 8), coneMaterial);
+  const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.105, 0.22, 10), cupMaterial);
   const scoop = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 7), scoopMaterial);
   tray.position.y = 0.02;
   cone.position.set(0, 0.22, 0);
   cone.rotation.x = Math.PI;
+  cup.position.set(0, 0.15, 0);
+  cup.visible = false;
   scoop.position.set(0, 0.43, 0);
-  [tray, cone, scoop].forEach((mesh) => {
+  [tray, cone, cup, scoop].forEach((mesh) => {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
   });
-  group.add(tray, cone, scoop);
+  group.add(tray, cone, cup, scoop);
   return {
     group,
+    cone,
+    cup,
+    scoop,
     scoopMaterial,
-    geometries: [tray.geometry, cone.geometry, scoop.geometry],
-    materials: [trayMaterial, coneMaterial, scoopMaterial],
+    geometries: [tray.geometry, cone.geometry, cup.geometry, scoop.geometry],
+    materials: [trayMaterial, coneMaterial, cupMaterial, scoopMaterial],
   };
 }
 
@@ -146,10 +154,18 @@ export class WorkerAutomationSystem {
     });
   }
 
+  get counterWorkerActive() {
+    return this.workerCount > 0 && this.workers[0]?.model.visible;
+  }
+
   _setServiceTray(worker, order, visible) {
     worker.tray.group.visible = visible;
     if (order?.flavor) {
       worker.tray.scoopMaterial.color.setHex(FLAVOR_COLORS[order.flavor] ?? FLAVOR_COLORS.vanilla);
+      const isCup = order.container === 'cup';
+      worker.tray.cone.visible = !isCup;
+      worker.tray.cup.visible = isCup;
+      worker.tray.scoop.position.y = isCup ? 0.31 : 0.43;
     }
   }
 
@@ -201,7 +217,7 @@ export class WorkerAutomationSystem {
       const point = this.productionSystem.stationPoints.get(finishStation);
       return point ? [point.x, point.z] : null;
     }
-    if (stage === 'need-serve' || stage === 'serving' || stage === 'waiting-for-table') {
+    if (stage === 'need-serve') {
       const point = this.productionSystem.stationPoints.get('serve');
       return point ? [point.x, point.z] : null;
     }
@@ -222,7 +238,7 @@ export class WorkerAutomationSystem {
       this.assignedOrder = activeOrder;
       const server = activeOrder ? this._chooseServer() : null;
       this.assignedServerIndex = server?.index ?? null;
-      this.workers.filter(({ role }) => role === 'server').forEach((worker) => {
+      this.workers.forEach((worker) => {
         worker.lastHandledStage = null;
       });
     }
@@ -230,6 +246,11 @@ export class WorkerAutomationSystem {
     this.workers.filter((worker) => worker.role === 'server' && worker.index < this.workerCount)
       .forEach((worker) => {
         if (worker.index !== this.assignedServerIndex || !activeOrder) {
+          this._holdPost(worker, delta);
+          return;
+        }
+
+        if (stage === 'serving' || stage === 'waiting-for-table') {
           this._holdPost(worker, delta);
           return;
         }
@@ -244,12 +265,75 @@ export class WorkerAutomationSystem {
         const arrived = this._moveWorker(worker, target, delta, carrying);
         if (!arrived) return;
         setWorkerAnimation(worker, carrying ? 'Carry_Idle' : 'Idle', this.speedLevel);
-        if (!['need-container', 'need-machine', 'need-finish', 'need-serve'].includes(stage)) return;
+        if (stage === 'need-serve') {
+          worker.state = 'handoff-ready';
+          return;
+        }
+        worker.state = carrying ? 'preparing-order' : 'collecting-container';
+        if (!['need-container', 'need-machine', 'need-finish'].includes(stage)) return;
         if (worker.lastHandledStage === stage) return;
         worker.lastHandledStage = stage;
-        setWorkerAnimation(worker, stage === 'need-serve' ? 'Serve' : 'Pickup', this.speedLevel, 0.08);
+        setWorkerAnimation(worker, 'Pickup', this.speedLevel, 0.08);
         this.productionSystem.performWorkerStage(worker, elapsed);
       });
+  }
+
+  _updateCashier(worker, delta, elapsed) {
+    const { activeOrder, stage } = this.productionSystem;
+    const arrived = this._moveWorker(worker, worker.definition.post, delta, false);
+    if (!arrived) return;
+    worker.model.rotation.y = targetRotation(
+      worker.definition.face[0] - worker.model.position.x,
+      worker.definition.face[1] - worker.model.position.z,
+    );
+
+    if (!activeOrder) {
+      this._setServiceTray(worker, null, false);
+      worker.state = 'at-counter';
+      setWorkerAnimation(worker, 'Idle', this.speedLevel);
+      return;
+    }
+
+    if (stage === 'need-serve') {
+      const assignedServer = this.workers[this.assignedServerIndex];
+      const servePoint = this.productionSystem.stationPoints.get('serve');
+      const player = this.characterSystem.player?.model;
+      const playerHandoffReady = Boolean(
+        player
+        && this.characterSystem.playerCarrying
+        && servePoint
+        && (player.position.x - servePoint.x) ** 2 + (player.position.z - servePoint.z) ** 2
+          <= COUNTER_HANDOFF_RADIUS ** 2
+      );
+      const serverHandoffReady = assignedServer?.index < this.workerCount
+        && assignedServer.state === 'handoff-ready';
+      const handoffReady = playerHandoffReady || serverHandoffReady;
+      this._setServiceTray(worker, activeOrder, handoffReady);
+      if (!handoffReady) {
+        worker.state = 'waiting-for-order';
+        setWorkerAnimation(worker, 'Idle', this.speedLevel);
+        return;
+      }
+      worker.state = 'serving-customer';
+      if (worker.lastHandledStage === stage) return;
+      worker.lastHandledStage = stage;
+      setWorkerAnimation(worker, 'Serve', this.speedLevel, 0.08);
+      this.productionSystem.performWorkerStage(worker, elapsed);
+      return;
+    }
+
+    if (stage === 'serving' || stage === 'waiting-for-table') {
+      this._setServiceTray(worker, activeOrder, true);
+      worker.state = stage === 'serving' ? 'serving-customer' : 'holding-order';
+      if (stage === 'waiting-for-table' || worker.currentAnimation !== 'Serve') {
+        setWorkerAnimation(worker, 'Carry_Idle', this.speedLevel);
+      }
+      return;
+    }
+
+    this._setServiceTray(worker, null, false);
+    worker.state = 'taking-order';
+    setWorkerAnimation(worker, 'Idle', this.speedLevel);
   }
 
   _updateCleaner(worker, delta, elapsed) {
@@ -314,9 +398,9 @@ export class WorkerAutomationSystem {
       worker.mixer.update(delta);
     });
 
-    const cashier = this.workers[0];
-    if (this.workerCount > 0) this._holdPost(cashier, delta);
     this._updateServers(delta, elapsed);
+    const cashier = this.workers[0];
+    if (this.workerCount > 0) this._updateCashier(cashier, delta, elapsed);
     const cleaner = this.workers[3];
     if (this.workerCount > 3) this._updateCleaner(cleaner, delta, elapsed);
   }

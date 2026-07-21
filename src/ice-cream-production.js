@@ -1085,6 +1085,13 @@ export class IceCreamProductionSystem {
     }
 
     if (this.stage === 'need-serve') {
+      if (this.hiringSystem?.workerAutomation?.counterWorkerActive) {
+        this._setStatus(
+          `Counter worker is serving the ${this.activeOrder.flavor} ${this.activeOrder.container}`,
+          'The employee will hand the requested ice cream to the front customer',
+        );
+        return;
+      }
       const servePoint = this.stationPoints.get('serve');
       if (!servePoint || !this._near(playerPosition, servePoint)) return;
       this.characterSystem.playPlayerAction('Serve');
