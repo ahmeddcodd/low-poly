@@ -44,7 +44,7 @@ const production = {
   cash: 500,
   servedCount: 0,
   totalCollectedCash: 0,
-  supports: Array.from({ length: 4 }, () => ({ model: makeObject() })),
+  supports: Array.from({ length: 2 }, () => ({ model: makeObject() })),
   unlockedFlavorIds: [],
   setSupportStationsVisible(value) { this.supportStationsVisible = value; },
   setUnlockedFlavors(ids) { this.unlockedFlavorIds = [...ids]; },

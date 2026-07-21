@@ -26,9 +26,9 @@ const STORY_CATALOG = Object.freeze([
     cost: 140,
     position: Object.freeze([1.55, 0.04, 0.65]),
     label: 'COUNTER',
-    footer: 'STARTER SETUP',
-    title: 'Build the service counter',
-    detail: 'Stand on the counter pad and invest $140 from your starting cash',
+    footer: 'CONE + CUP',
+    title: 'Build the counter and container machines',
+    detail: 'Invest $140 to add the counter plus the cone and cup machines',
   }),
   Object.freeze({
     id: 'vanilla-machine',
@@ -271,15 +271,15 @@ const SIMPLE_STEP_OVERRIDES = Object.freeze({
     cost: 200,
     position: Object.freeze([-5.2, 0.04, -3.45]),
     label: '2 MACHINES',
-    footer: 'STARTER SETUP',
-    title: 'Install the starter machines',
-    detail: 'Invest $200 to add vanilla and strawberry',
+    footer: 'STARTER FLAVOURS',
+    title: 'Install the first flavour machines',
+    detail: 'Invest $200 to add only vanilla and strawberry flavours',
   }),
   'first-sales': Object.freeze({
     id: 'first-sale',
     target: 1,
     title: 'Serve your first customer',
-    detail: 'Prepare the requested ice cream and deliver it at the counter',
+    detail: 'Pick a cone or cup, use the requested flavour machine, then serve it',
   }),
   'first-collection': Object.freeze({
     target: TUTORIAL_COLLECTION_TARGET,
@@ -560,7 +560,7 @@ export class ShopProgressionSystem {
   get nextDetail() {
     return this.activeStep
       ? this.activeStep.detail
-      : 'Four flavours, expanded seating, two-role staff, HR and GM are all active';
+      : 'Four flavour machines, cone and cup machines, seating, staff, HR and GM are active';
   }
 
   get progressPercent() {

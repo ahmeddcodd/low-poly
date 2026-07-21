@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { CharacterSystem } from '../src/character-system.js';
-import { IceCreamProductionSystem } from '../src/ice-cream-production.js';
+import { IceCreamProductionSystem, PRODUCTION_STATION_IDS } from '../src/ice-cream-production.js';
+
+assert.deepEqual(PRODUCTION_STATION_IDS, ['cone', 'cup']);
 
 const characterSystem = new CharacterSystem();
 assert.equal(characterSystem.playerMarker.visible, true);

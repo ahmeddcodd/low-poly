@@ -57,11 +57,10 @@ const ORDER_FLAVOR_LABELS = Object.freeze({
   mint: 'MINT',
 });
 
+export const PRODUCTION_STATION_IDS = Object.freeze(['cone', 'cup']);
 const SUPPORT_LAYOUT = Object.freeze([
-  Object.freeze({ id: 'basic-topping', source: 'Support_BasicToppingStation', position: [-7.78, 0.02, -0.7], rotation: Math.PI / 2, collider: true, station: 'topping' }),
   Object.freeze({ id: 'cone-dispenser', source: 'Support_ConeDispenser', position: [3.6, 0.02, -3.1], rotation: -Math.PI / 2, collider: true, station: 'cone' }),
   Object.freeze({ id: 'cup-dispenser', source: 'Support_CupDispenser', position: [3.6, 0.02, -4.35], rotation: -Math.PI / 2, collider: true, station: 'cup' }),
-  Object.freeze({ id: 'spoon-wafer-dispenser', source: 'Support_SpoonWaferDispenser', position: [3.6, 0.02, -5.6], rotation: -Math.PI / 2, collider: true, station: 'spoon' }),
 ]);
 
 const PRODUCT_NAMES = Object.freeze({
@@ -559,8 +558,7 @@ export class IceCreamProductionSystem {
       if (!anchor) throw new Error(`Missing InteractionPoint on ${definition.source}`);
       const point = anchor.getWorldPosition(new THREE.Vector3());
       this.stationPoints.set(definition.station, point);
-      const color = definition.station === 'topping' ? 0xffae45 : 0x57e87b;
-      const marker = createInteractionMarker(point, color);
+      const marker = createInteractionMarker(point, 0x57e87b);
       this.markers.set(`station-${definition.station}`, marker);
       this.group.add(marker);
     });
@@ -939,15 +937,6 @@ export class IceCreamProductionSystem {
       return true;
     }
 
-    if (this.stage === 'need-finish') {
-      this.stage = 'need-serve';
-      this._setTargetMarker('serve');
-      this._setStatus(
-        `${worker.label} worker added the finishing touch`,
-        'They are carrying the completed ice cream to the customer',
-      );
-      return true;
-    }
 
     if (this.stage === 'need-serve') {
       this.stage = 'serving';
@@ -1067,7 +1056,7 @@ export class IceCreamProductionSystem {
 
     const workerAutomation = this.hiringSystem?.workerAutomation;
     if (workerAutomation?.orderAutomationActive
-      && ['need-container', 'need-machine', 'need-finish', 'need-serve'].includes(this.stage)) {
+      && ['need-container', 'need-machine', 'need-serve'].includes(this.stage)) {
       const assignedWorker = workerAutomation.workers[workerAutomation.assignedServerIndex]
         ?? workerAutomation.workers[0];
       this._setTargetMarker(null);
@@ -1119,29 +1108,15 @@ export class IceCreamProductionSystem {
       } else {
         this._setCarryProduct(productName);
       }
-      this.stage = 'need-finish';
-      const finishStation = this.activeOrder.container === 'cup' ? 'spoon' : 'topping';
-      this._setTargetMarker(`station-${finishStation}`);
-      this._setStatus(
-        this.activeOrder.container === 'cup' ? 'Add a spoon and wafer' : 'Add the finishing topping',
-        `Walk to the ${finishStation === 'spoon' ? 'spoon dispenser' : 'topping station'}`,
-      );
-      return;
-    }
-
-    if (this.stage === 'need-finish') {
-      const finishStation = this.activeOrder.container === 'cup' ? 'spoon' : 'topping';
-      const stationPoint = this.stationPoints.get(finishStation);
-      if (!stationPoint || !this._near(playerPosition, stationPoint)) return;
-      this.characterSystem.playPlayerAction('Pickup');
       this.stage = 'need-serve';
       this._setTargetMarker('serve');
       this._setStatus(
         `Serve the ${this.activeOrder.flavor} ${this.activeOrder.container}`,
-        'Take the completed tray to the staff point behind the counter',
+        'Take the completed ice cream to the staff point behind the counter',
       );
       return;
     }
+
 
     if (this.stage === 'need-serve') {
       const servePoint = this.stationPoints.get('serve');

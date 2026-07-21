@@ -8,6 +8,7 @@ assert.deepEqual(
 );
 assert.equal(starterSteps.reduce((total, step) => total + step.cost, 0), 450);
 assert.ok(starterSteps.at(-1).opensCustomers);
+assert.match(starterSteps[0].detail, /cone and cup machines/);
 
 const servedTargets = STORY_STEPS
   .filter(({ type }) => type === 'served')

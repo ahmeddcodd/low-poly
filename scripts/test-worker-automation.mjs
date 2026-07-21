@@ -19,8 +19,6 @@ function makeProductionSystem(order, stage = 'need-container') {
     stationPoints: new Map([
       ['cone', new THREE.Vector3(3.6, 0, -3.1)],
       ['cup', new THREE.Vector3(3.6, 0, -4.35)],
-      ['topping', new THREE.Vector3(-7.78, 0, -0.7)],
-      ['spoon', new THREE.Vector3(3.6, 0, -5.6)],
       ['serve', new THREE.Vector3(1.55, 0, -2.12)],
     ]),
     machines: [
@@ -39,7 +37,6 @@ function makeProductionSystem(order, stage = 'need-container') {
       });
       if (this.stage === 'need-container') this.stage = 'need-machine';
       else if (this.stage === 'need-machine') this.stage = 'dispensing';
-      else if (this.stage === 'need-finish') this.stage = 'need-serve';
       else if (this.stage === 'need-serve') this.stage = 'serving';
       return true;
     },
@@ -88,10 +85,7 @@ cashier.model.position.copy(production.machines.find(({ flavor }) => flavor === 
 system.update(0.016, 2);
 assert.equal(production.stage, 'dispensing');
 
-production.stage = 'need-finish';
-cashier.model.position.copy(production.stationPoints.get('spoon'));
-system.update(0.016, 3);
-assert.equal(production.stage, 'need-serve');
+production.stage = 'need-serve';
 
 cashier.model.position.copy(production.stationPoints.get('serve'));
 system.update(0.016, 4);
@@ -113,7 +107,6 @@ assert.equal(cashier.tray.scoopMaterial.color.getHex(), 0xffe7a0);
 assert.deepEqual(production.calls.map(({ stage }) => stage), [
   'need-container',
   'need-machine',
-  'need-finish',
   'need-serve',
 ]);
 assert.ok(production.calls.every(({ index, role, flavor, container }) => (

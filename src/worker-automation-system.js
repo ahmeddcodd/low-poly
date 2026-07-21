@@ -481,11 +481,6 @@ export class WorkerAutomationSystem {
       const machine = this.productionSystem.machines.find(({ flavor }) => flavor === activeOrder.flavor);
       return machine ? [machine.standPoint.x, machine.standPoint.z] : null;
     }
-    if (stage === 'need-finish') {
-      const finishStation = activeOrder.container === 'cup' ? 'spoon' : 'topping';
-      const point = this.productionSystem.stationPoints.get(finishStation);
-      return point ? [point.x, point.z] : null;
-    }
     if (stage === 'need-serve' || stage === 'serving' || stage === 'waiting-for-table') {
       const point = this.productionSystem.stationPoints.get('serve');
       return point ? [point.x, point.z] : null;
@@ -545,7 +540,7 @@ export class WorkerAutomationSystem {
         }
         setWorkerAnimation(worker, carrying ? 'Carry_Idle' : 'Idle', this.speedLevel);
         worker.state = carrying ? 'preparing-order' : 'collecting-container';
-        if (!['need-container', 'need-machine', 'need-finish'].includes(stage)) return;
+        if (!['need-container', 'need-machine'].includes(stage)) return;
         if (worker.lastHandledStage === stage) return;
         worker.lastHandledStage = stage;
         setWorkerAnimation(worker, 'Pickup', this.speedLevel, 0.08);
