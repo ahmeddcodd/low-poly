@@ -4,9 +4,9 @@ import { STARTING_CASH, STORY_SERVICE_GOAL, STORY_STEPS, TUTORIAL_COLLECTION_TAR
 const starterSteps = STORY_STEPS.slice(1, 4);
 assert.deepEqual(
   starterSteps.map(({ id }) => id),
-  ['starter-counter', 'starter-machines', 'starter-seating'],
+  ['starter-counter', 'first-vanilla-machine', 'starter-seating'],
 );
-assert.equal(starterSteps.reduce((total, step) => total + step.cost, 0), 450);
+assert.equal(starterSteps.reduce((total, step) => total + step.cost, 0), 350);
 assert.ok(starterSteps.at(-1).opensCustomers);
 assert.match(starterSteps[0].detail, /cone and cup machines/);
 
@@ -20,13 +20,14 @@ const tutorialCollectionStep = STORY_STEPS.find(({ id }) => id === 'first-collec
 assert.equal(tutorialCollectionStep.target, TUTORIAL_COLLECTION_TARGET);
 assert.equal(TUTORIAL_COLLECTION_TARGET, 15);
 
-const flavorUnlocks = STORY_STEPS
-  .filter(({ unlockType }) => unlockType === 'flavor')
+const machineUnlocks = STORY_STEPS
+  .filter(({ unlockType }) => unlockType === 'machine')
   .flatMap(({ unlockId, unlockIds }) => unlockIds || [unlockId]);
 assert.deepEqual(
-  flavorUnlocks,
-  ['vanilla', 'strawberry', 'chocolate', 'mint'],
+  machineUnlocks,
+  ['vanilla-1', 'vanilla-2', 'vanilla-3'],
 );
+assert.equal(STORY_STEPS.some(({ unlockType }) => unlockType === 'flavor'), false);
 assert.deepEqual(
   STORY_STEPS.filter(({ type }) => type === 'manager').map(({ managerId }) => managerId),
   ['gym-manager', 'wc-manager'],

@@ -13,9 +13,6 @@ const LOOPING_ACTIONS = new Set(['Idle', 'Walk_Player', 'Carry_Idle', 'Carry_Wal
 const SERVICE_ROLES = new Set(['server']);
 const FLAVOR_COLORS = Object.freeze({
   vanilla: 0xffe7a0,
-  strawberry: 0xff7690,
-  chocolate: 0x9b583c,
-  mint: 0x63e2b7,
 });
 
 const ROLE_DEFINITIONS = Object.freeze([
@@ -477,7 +474,7 @@ export class WorkerAutomationSystem {
       return point ? [point.x, point.z] : null;
     }
     if (stage === 'need-machine' || stage === 'dispensing') {
-      const machine = this.productionSystem.machines.find(({ flavor }) => flavor === activeOrder.flavor);
+      const machine = this.productionSystem.machines.find(({ id }) => id === activeOrder.machineId);
       return machine ? [machine.standPoint.x, machine.standPoint.z] : null;
     }
     if (stage === 'need-serve' || stage === 'serving' || stage === 'waiting-for-table') {

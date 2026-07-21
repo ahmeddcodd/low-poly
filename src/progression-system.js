@@ -266,20 +266,21 @@ const SIMPLE_STORY_IDS = Object.freeze([
 
 const SIMPLE_STEP_OVERRIDES = Object.freeze({
   'vanilla-machine': Object.freeze({
-    id: 'starter-machines',
-    unlockIds: Object.freeze(['vanilla', 'strawberry']),
-    cost: 200,
-    position: Object.freeze([-5.2, 0.04, -3.45]),
-    label: '2 MACHINES',
-    footer: 'STARTER FLAVOURS',
-    title: 'Install the first flavour machines',
-    detail: 'Invest $200 to add only vanilla and strawberry flavours',
+    id: 'first-vanilla-machine',
+    unlockType: 'machine',
+    unlockId: 'vanilla-1',
+    cost: 100,
+    position: Object.freeze([-6.4, 0.04, -3.45]),
+    label: 'VANILLA 1',
+    footer: 'START PRODUCTION',
+    title: 'Install the first vanilla machine',
+    detail: 'Invest $100 to start making vanilla ice cream',
   }),
   'first-sales': Object.freeze({
     id: 'first-sale',
     target: 1,
     title: 'Serve your first customer',
-    detail: 'Pick a cone or cup, use the requested flavour machine, then serve it',
+    detail: 'Pick a cone or cup, fill it with vanilla, then serve it',
   }),
   'first-collection': Object.freeze({
     target: TUTORIAL_COLLECTION_TARGET,
@@ -296,10 +297,32 @@ const SIMPLE_STEP_OVERRIDES = Object.freeze({
     title: 'Expand the dining room',
     detail: 'Invest $110 to add two more customer tables',
   }),
+  'chocolate-machine': Object.freeze({
+    id: 'second-vanilla-machine',
+    unlockType: 'machine',
+    unlockId: 'vanilla-2',
+    cost: 80,
+    position: Object.freeze([-4, 0.04, -3.45]),
+    label: 'VANILLA 2',
+    footer: '2X CAPACITY',
+    title: 'Increase vanilla production',
+    detail: 'Invest $80 in a second vanilla machine for 2x production',
+  }),
+  'mint-machine': Object.freeze({
+    id: 'third-vanilla-machine',
+    unlockType: 'machine',
+    unlockId: 'vanilla-3',
+    cost: 100,
+    position: Object.freeze([-1.6, 0.04, -3.45]),
+    label: 'VANILLA 3',
+    footer: '3X CAPACITY',
+    title: 'Maximise vanilla production',
+    detail: 'Invest $100 in a third vanilla machine for 3x production',
+  }),
   'grand-finale': Object.freeze({
     target: STORY_SERVICE_GOAL,
     title: `Serve ${STORY_SERVICE_GOAL} customers`,
-    detail: 'Run your complete shop to finish the story',
+    detail: 'Run all three vanilla machines to finish the story',
   }),
 });
 
@@ -539,7 +562,7 @@ export class ShopProgressionSystem {
     this.characterSystem.setUnlockedDiningTables([]);
     this.characterSystem.setCustomerFlowEnabled(false);
     this.productionSystem.setSupportStationsVisible(false);
-    this.productionSystem.setUnlockedFlavors([]);
+    this.productionSystem.setUnlockedMachines([]);
     this.hiringSystem.setHiringAvailable('gym-manager', false);
     this.hiringSystem.setHiringAvailable('wc-manager', false);
     this._syncActiveStep(true);
@@ -560,7 +583,7 @@ export class ShopProgressionSystem {
   get nextDetail() {
     return this.activeStep
       ? this.activeStep.detail
-      : 'Four flavour machines, cone and cup machines, seating, staff, HR and GM are active';
+      : 'Three vanilla machines, cone and cup machines, seating, staff, HR and GM are active';
   }
 
   get progressPercent() {
@@ -568,8 +591,8 @@ export class ShopProgressionSystem {
     return Math.round(((this.stageIndex + this._activeStepProgress()) / STORY_STEPS.length) * 100);
   }
 
-  get unlockedFlavors() {
-    return this.productionSystem.unlockedFlavorIds;
+  get unlockedMachines() {
+    return this.productionSystem.unlockedMachineIds;
   }
 
   get unlockedTables() {
@@ -668,9 +691,9 @@ export class ShopProgressionSystem {
         furniture.push(...this.iceCreamShop.unlockDiningTable(unlockId));
         this.characterSystem.unlockDiningTable(unlockId);
       });
-    } else if (step.unlockType === 'flavor') {
+    } else if (step.unlockType === 'machine') {
       unlockIds.forEach((unlockId) => {
-        const machine = this.productionSystem.unlockFlavor(unlockId);
+        const machine = this.productionSystem.unlockMachine(unlockId);
         if (machine) furniture.push(machine);
       });
     }

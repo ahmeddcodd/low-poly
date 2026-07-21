@@ -111,9 +111,9 @@ function applyLocalDebugStart(characterSystem) {
     gym: [13.05, -3],
     wc: [13.05, 3],
     north: [-6.5, 2.45],
-    chocolate: [-1.6, -4.72],
+    vanilla3: [-1.6, -4.72],
     center: [-6.5, 5],
-    mint: [0.8, -4.72],
+    vanilla2: [-4, -4.72],
     trash: [7.2, 5.05],
   };
   const position = positions[start];

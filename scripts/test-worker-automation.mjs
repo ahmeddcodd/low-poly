@@ -22,8 +22,8 @@ function makeProductionSystem(order, stage = 'need-container') {
       ['serve', new THREE.Vector3(1.55, 0, -2.12)],
     ]),
     machines: [
-      { flavor: 'vanilla', standPoint: new THREE.Vector3(-6.4, 0, -3.8) },
-      { flavor: 'strawberry', standPoint: new THREE.Vector3(-4, 0, -3.8) },
+      { id: 'vanilla-1', flavor: 'vanilla', standPoint: new THREE.Vector3(-6.4, 0, -3.8) },
+      { id: 'vanilla-2', flavor: 'vanilla', standPoint: new THREE.Vector3(-4, 0, -3.8) },
     ],
     tableCleanup: null,
     calls,
@@ -43,15 +43,15 @@ function makeProductionSystem(order, stage = 'need-container') {
   };
 }
 
-const strawberryCup = Object.freeze({ flavor: 'strawberry', container: 'cup' });
-const production = makeProductionSystem(strawberryCup);
+const vanillaCup = Object.freeze({ flavor: 'vanilla', container: 'cup', machineId: 'vanilla-2' });
+const production = makeProductionSystem(vanillaCup);
 const system = new WorkerAutomationSystem(makeSourceCharacter(), {}, production);
 system.setWorkerCount(99);
 assert.equal(system.workerCount, 2);
 assert.deepEqual(system.workers.map(({ role }) => role), ['server', 'cleaner']);
 system.setWorkerCount(0);
 system.update(0.016, 0.1);
-assert.equal(system.assignedOrder, strawberryCup);
+assert.equal(system.assignedOrder, vanillaCup);
 assert.equal(system.assignedServerIndex, null);
 system.setWorkerCount(1);
 const cashier = system.workers[0];
@@ -71,7 +71,7 @@ assert.equal(system.workerCount, 2);
 assert.equal(system.workers[1].role, 'cleaner');
 assert.equal(system.workers[1].model.visible, true);
 assert.equal(system.assignedServerIndex, 0, 'hiring the cleaner interrupted the server');
-assert.equal(system.assignedOrder, strawberryCup, 'the server lost its active order');
+assert.equal(system.assignedOrder, vanillaCup, 'the server lost its active order');
 
 cashier.model.position.copy(cupPoint);
 system.update(0.016, 1);
@@ -81,7 +81,7 @@ assert.equal(system.counterWorkerActive, true);
 assert.equal(system.assignedServerIndex, 0);
 assert.equal(production.stage, 'need-machine');
 
-cashier.model.position.copy(production.machines.find(({ flavor }) => flavor === 'strawberry').standPoint);
+cashier.model.position.copy(production.machines.find(({ id }) => id === 'vanilla-2').standPoint);
 system.update(0.016, 2);
 assert.equal(production.stage, 'dispensing');
 
@@ -95,7 +95,7 @@ assert.equal(cashier.currentAnimation, 'Serve');
 assert.equal(cashier.tray.group.visible, true);
 assert.equal(cashier.tray.cup.visible, true);
 assert.equal(cashier.tray.cone.visible, false);
-assert.equal(cashier.tray.scoopMaterial.color.getHex(), 0xff7690);
+assert.equal(cashier.tray.scoopMaterial.color.getHex(), 0xffe7a0);
 
 system._setServiceTray(cashier, { flavor: 'vanilla', container: 'cone' }, true);
 assert.equal(cashier.tray.cone.visible, true);
@@ -110,7 +110,7 @@ assert.deepEqual(production.calls.map(({ stage }) => stage), [
   'need-serve',
 ]);
 assert.ok(production.calls.every(({ index, role, flavor, container }) => (
-  index === 0 && role === 'server' && flavor === 'strawberry' && container === 'cup'
+  index === 0 && role === 'server' && flavor === 'vanilla' && container === 'cup'
 )));
 
 system.dispose();

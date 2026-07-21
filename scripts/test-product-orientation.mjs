@@ -27,7 +27,7 @@ const bytes = fs.readFileSync(new URL('../ice_cream_glb/products_all.glb', impor
 const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 const gltf = await new GLTFLoader().parseAsync(buffer, '');
 
-for (const productName of ['Piece_Cone', 'Product_Vanilla_Cone', 'Product_Strawberry_Cone']) {
+for (const productName of ['Piece_Cone', 'Product_Vanilla_Cone']) {
   const source = gltf.scene.getObjectByName(productName);
   assert.ok(source, `missing ${productName}`);
   const product = source.clone(true);

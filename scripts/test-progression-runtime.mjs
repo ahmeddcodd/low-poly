@@ -45,10 +45,10 @@ const production = {
   servedCount: 0,
   totalCollectedCash: 0,
   supports: Array.from({ length: 2 }, () => ({ model: makeObject() })),
-  unlockedFlavorIds: [],
+  unlockedMachineIds: [],
   setSupportStationsVisible(value) { this.supportStationsVisible = value; },
-  setUnlockedFlavors(ids) { this.unlockedFlavorIds = [...ids]; },
-  unlockFlavor(id) { this.unlockedFlavorIds.push(id); return makeObject(); },
+  setUnlockedMachines(ids) { this.unlockedMachineIds = [...ids]; },
+  unlockMachine(id) { this.unlockedMachineIds.push(id); return makeObject(); },
   spendCash(amount) { const spent = Math.min(amount, this.cash); this.cash -= spent; return spent; },
   setStatus(title, detail) { this.status = { title, detail }; },
 };
@@ -66,7 +66,7 @@ assert.equal(system.activeStep.id, 'enter-shop');
 assert.equal(STORY_STEPS.length, 15);
 assert.equal(production.cash, 500);
 assert.equal(iceCreamShop.counterUnlocked, false);
-assert.deepEqual(production.unlockedFlavorIds, []);
+assert.deepEqual(production.unlockedMachineIds, []);
 assert.deepEqual(character.unlockedDiningTableIds, []);
 assert.equal(character.customerFlowEnabled, false);
 
@@ -86,10 +86,10 @@ while (!system.customersOpen) {
   }
 }
 
-assert.equal(production.cash, 50);
+assert.equal(production.cash, 150);
 assert.equal(iceCreamShop.counterUnlocked, true);
 assert.equal(production.supportStationsVisible, true);
-assert.deepEqual(production.unlockedFlavorIds, ['vanilla', 'strawberry']);
+assert.deepEqual(production.unlockedMachineIds, ['vanilla-1']);
 assert.deepEqual(character.unlockedDiningTableIds, ['compact-table']);
 assert.equal(character.customerFlowEnabled, true);
 assert.equal(system.activeStep.id, 'first-sale');
@@ -127,7 +127,7 @@ while (!system.complete) {
 }
 
 assert.equal(system.progressPercent, 100);
-assert.deepEqual(production.unlockedFlavorIds, ['vanilla', 'strawberry', 'chocolate', 'mint']);
+assert.deepEqual(production.unlockedMachineIds, ['vanilla-1', 'vanilla-2', 'vanilla-3']);
 assert.deepEqual(character.unlockedDiningTableIds, [
   'compact-table', 'dining-set-north', 'dining-set-center',
 ]);

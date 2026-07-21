@@ -265,7 +265,8 @@ function animate(timestamp) {
       restaurantScene.iceCreamProduction.totalCollectedCash,
     );
     canvas.dataset.entranceOpen = String(restaurantScene.entranceController?.opened ?? true);
-    canvas.dataset.unlockedFlavors = restaurantScene.progressionSystem.unlockedFlavors.join(',');
+    canvas.dataset.unlockedMachines = restaurantScene.progressionSystem.unlockedMachines.join(',');
+    canvas.dataset.productionCapacity = String(restaurantScene.iceCreamProduction.productionCapacity);
     canvas.dataset.unlockedTables = restaurantScene.progressionSystem.unlockedTables.join(',');
     canvas.dataset.customerVisitCount = String(characterSystem.customerVisitCount);
     canvas.dataset.simulationTime = elapsed.toFixed(2);

@@ -5,34 +5,29 @@ import { TableCleanupSystem } from './table-cleanup-system.js';
 import { HiringSystem } from './hiring-system.js';
 import { STORY_SERVICE_GOAL, TUTORIAL_COLLECTION_TARGET } from './progression-system.js';
 
+const VANILLA_MACHINE_URL = new URL('../ice_cream_glb/machine_vanilla.glb', import.meta.url).href;
+export const VANILLA_MACHINE_IDS = Object.freeze(['vanilla-1', 'vanilla-2', 'vanilla-3']);
 const MACHINE_DEFINITIONS = Object.freeze([
   Object.freeze({
+    id: VANILLA_MACHINE_IDS[0],
     flavor: 'vanilla',
     label: 'Vanilla',
     color: 0xffe7a0,
-    url: new URL('../ice_cream_glb/machine_vanilla.glb', import.meta.url).href,
     position: Object.freeze([-6.4, 0.02, -4.72]),
   }),
   Object.freeze({
-    flavor: 'strawberry',
-    label: 'Strawberry',
-    color: 0xff7690,
-    url: new URL('../ice_cream_glb/machine_strawberry.glb', import.meta.url).href,
+    id: VANILLA_MACHINE_IDS[1],
+    flavor: 'vanilla',
+    label: 'Vanilla',
+    color: 0xffe7a0,
     position: Object.freeze([-4, 0.02, -4.72]),
   }),
   Object.freeze({
-    flavor: 'chocolate',
-    label: 'Chocolate',
-    color: 0x9b583c,
-    url: new URL('../ice_cream_glb/machine_chocolate.glb', import.meta.url).href,
+    id: VANILLA_MACHINE_IDS[2],
+    flavor: 'vanilla',
+    label: 'Vanilla',
+    color: 0xffe7a0,
     position: Object.freeze([-1.6, 0.02, -4.72]),
-  }),
-  Object.freeze({
-    flavor: 'mint',
-    label: 'Mint',
-    color: 0x63e2b7,
-    url: new URL('../ice_cream_glb/machine_mint.glb', import.meta.url).href,
-    position: Object.freeze([0.8, 0.02, -4.72]),
   }),
 ]);
 
@@ -46,15 +41,9 @@ const MAX_CASH_BILLS = 24;
 const STARTING_CASH = 500;
 const ORDER_FLAVOR_COLORS = Object.freeze({
   vanilla: '#ffe7a0',
-  strawberry: '#ff7690',
-  chocolate: '#9b583c',
-  mint: '#63e2b7',
 });
 const ORDER_FLAVOR_LABELS = Object.freeze({
   vanilla: 'VANILLA',
-  strawberry: 'STRAWBERRY',
-  chocolate: 'CHOCOLATE',
-  mint: 'MINT',
 });
 
 export const PRODUCTION_STATION_IDS = Object.freeze(['cone', 'cup']);
@@ -67,9 +56,6 @@ const PRODUCT_NAMES = Object.freeze({
   cone: 'Piece_Cone',
   cup: 'Piece_Cup',
   vanilla: Object.freeze({ cone: 'Product_Vanilla_Cone', cup: 'Product_Vanilla_Cup' }),
-  strawberry: Object.freeze({ cone: 'Product_Strawberry_Cone', cup: 'Product_Strawberry_Cup' }),
-  chocolate: Object.freeze({ cone: 'Product_Chocolate_Cone', cup: 'Product_Chocolate_Cup' }),
-  mint: Object.freeze({ cone: 'Product_Mint_Cone', cup: 'Product_Mint_Cup' }),
 });
 const CUSTOMER_PRODUCT_SCALE = 0.31;
 const CUSTOMER_PRODUCT_DINING_INSET = 0.035;
@@ -233,10 +219,10 @@ function createInteractionMarker(position, color, { radius = 0.55, floatingArrow
 
 function createMachine(gltf, definition, collisionRecords) {
   const model = gltf.scene;
-  model.name = `Production_Machine_${definition.flavor}`;
+  model.name = `Production_Machine_${definition.id}`;
   model.position.set(...definition.position);
-  model.userData.productionAssetId = `machine-${definition.flavor}`;
-  configureObject(model, collisionRecords, { id: `machine-${definition.flavor}`, collider: true });
+  model.userData.productionAssetId = `machine-${definition.id}`;
+  configureObject(model, collisionRecords, { id: `machine-${definition.id}`, collider: true });
 
   const mixer = new THREE.AnimationMixer(model);
   const actions = new Map(gltf.animations.map((clip) => [clip.name, mixer.clipAction(clip)]));
@@ -511,7 +497,7 @@ export class IceCreamProductionSystem {
     this.customerGripWorldQuaternion = new THREE.Quaternion();
     this.customerModelWorldQuaternion = new THREE.Quaternion();
     this.progressionSystem = null;
-    this.unlockedFlavors = new Set();
+    this.unlockedMachines = new Set();
     this.tableCleanup = null;
     this.hiringSystem = null;
     this.interactionColliders = Object.freeze([]);
@@ -533,7 +519,7 @@ export class IceCreamProductionSystem {
     this._buildStations();
     this._buildCarryRig();
     this.setSupportStationsVisible(false);
-    this.setUnlockedFlavors([]);
+    this.setUnlockedMachines([]);
   }
 
   _buildStations() {
@@ -541,9 +527,9 @@ export class IceCreamProductionSystem {
 
     this.machines.forEach((machine) => {
       const anchor = findAnchor(machine.model, 'StaffStandPoint');
-      if (!anchor) throw new Error(`Missing StaffStandPoint on ${machine.flavor} machine`);
+      if (!anchor) throw new Error(`Missing StaffStandPoint on ${machine.id}`);
       anchor.getWorldPosition(machine.standPoint);
-      const markerId = `machine-${machine.flavor}`;
+      const markerId = `machine-${machine.id}`;
       const marker = createInteractionMarker(machine.standPoint, 0x46ef3f, {
         radius: 0.7,
         floatingArrow: true,
@@ -630,23 +616,31 @@ export class IceCreamProductionSystem {
     }
   }
 
-  get unlockedFlavorIds() {
+  get unlockedMachineIds() {
     return MACHINE_DEFINITIONS
-      .map(({ flavor }) => flavor)
-      .filter((flavor) => this.unlockedFlavors.has(flavor));
+      .map(({ id }) => id)
+      .filter((id) => this.unlockedMachines.has(id));
   }
 
-  setUnlockedFlavors(flavorIds) {
-    this.unlockedFlavors = new Set(flavorIds);
+  get unlockedFlavorIds() {
+    return this.productionCapacity > 0 ? ['vanilla'] : [];
+  }
+
+  get productionCapacity() {
+    return this.unlockedMachineIds.length;
+  }
+
+  setUnlockedMachines(machineIds) {
+    this.unlockedMachines = new Set(machineIds);
     this.machines.forEach((machine) => {
-      const unlocked = this.unlockedFlavors.has(machine.flavor);
+      const unlocked = this.unlockedMachines.has(machine.id);
       machine.unlocked = unlocked;
       machine.model.visible = unlocked;
       this.colliders
-        .filter(({ productionAssetId }) => productionAssetId === `machine-${machine.flavor}`)
+        .filter(({ productionAssetId }) => productionAssetId === `machine-${machine.id}`)
         .forEach((collider) => { collider.enabled = unlocked; });
       if (!unlocked) {
-        const marker = this.markers.get(`machine-${machine.flavor}`);
+        const marker = this.markers.get(`machine-${machine.id}`);
         if (marker) marker.visible = false;
       }
     });
@@ -666,12 +660,12 @@ export class IceCreamProductionSystem {
     });
   }
 
-  unlockFlavor(flavor) {
-    const machine = this.machines.find((candidate) => candidate.flavor === flavor);
+  unlockMachine(machineId) {
+    const machine = this.machines.find((candidate) => candidate.id === machineId);
     if (!machine) return null;
-    const nextFlavors = new Set(this.unlockedFlavors);
-    nextFlavors.add(flavor);
-    this.setUnlockedFlavors(nextFlavors);
+    const nextMachines = new Set(this.unlockedMachines);
+    nextMachines.add(machineId);
+    this.setUnlockedMachines(nextMachines);
     return machine.model;
   }
 
@@ -881,11 +875,12 @@ export class IceCreamProductionSystem {
   }
 
   _startOrder() {
-    const unlockedFlavors = this.unlockedFlavorIds;
-    if (unlockedFlavors.length === 0) return false;
-    const flavor = unlockedFlavors[this.servedCount % unlockedFlavors.length];
+    const unlockedMachines = this.machines.filter(({ id }) => this.unlockedMachines.has(id));
+    if (unlockedMachines.length === 0) return false;
+    const machine = unlockedMachines[this.servedCount % unlockedMachines.length];
+    const flavor = 'vanilla';
     const container = this.servedCount % 2 === 0 ? 'cone' : 'cup';
-    const order = Object.freeze({ flavor, container });
+    const order = Object.freeze({ flavor, container, machineId: machine.id });
     const customer = this.characterSystem.assignFrontCustomerOrder(order);
     if (!customer) return false;
     this.activeOrder = order;
@@ -901,11 +896,13 @@ export class IceCreamProductionSystem {
 
   _triggerMachine(machine, elapsed) {
     machine.preview && (machine.preview.visible = true);
-    const productionSpeed = this.hiringSystem?.productionSpeedMultiplier ?? 1;
-    machine.dispensingUntil = elapsed + 0.82 / productionSpeed;
+    const staffSpeed = this.hiringSystem?.productionSpeedMultiplier ?? 1;
+    const dispenseSpeed = staffSpeed * Math.max(1, this.productionCapacity);
+    machine.dispensingUntil = elapsed + 0.82 / dispenseSpeed;
     playMachineAction(machine, '_Machine_Dispense');
     playMachineAction(machine, '_Product_Pop');
     playMachineAction(machine, '_Tray_Load');
+    return dispenseSpeed;
   }
 
   performWorkerStage(worker, elapsed) {
@@ -915,20 +912,20 @@ export class IceCreamProductionSystem {
 
     if (this.stage === 'need-container') {
       this.stage = 'need-machine';
-      this._setTargetMarker(`machine-${order.flavor}`);
+      this._setTargetMarker(`machine-${order.machineId}`);
       this._setStatus(
         `${worker.label} worker picked up the ${order.container}`,
-        `They are taking it to the ${order.flavor} machine`,
+        `They are taking it to ${order.machineId.replace('-', ' machine ')}`,
       );
       return true;
     }
 
     if (this.stage === 'need-machine') {
-      const machine = this.machines.find(({ flavor }) => flavor === order.flavor);
+      const machine = this.machines.find(({ id }) => id === order.machineId);
       if (!machine) return false;
-      this._triggerMachine(machine, elapsed);
+      const dispenseSpeed = this._triggerMachine(machine, elapsed);
       this.stage = 'dispensing';
-      this.dispenseReadyAt = elapsed + 0.74 / productionSpeed;
+      this.dispenseReadyAt = elapsed + 0.74 / dispenseSpeed;
       this._setTargetMarker(null);
       this._setStatus(
         `${worker.label} worker is dispensing ${order.flavor}`,
@@ -1078,22 +1075,21 @@ export class IceCreamProductionSystem {
       this.characterSystem.setPlayerCarrying(true);
       this.characterSystem.playPlayerAction('Pickup');
       this.stage = 'need-machine';
-      this._setTargetMarker(`machine-${this.activeOrder.flavor}`);
+      this._setTargetMarker(`machine-${this.activeOrder.machineId}`);
       this._setStatus(
         `Make ${this.activeOrder.flavor} ice cream`,
-        `Take the ${this.activeOrder.container} to the ${this.activeOrder.flavor} machine`,
+        `Take the ${this.activeOrder.container} to the selected vanilla machine`,
       );
       return;
     }
 
     if (this.stage === 'need-machine') {
-      const machine = this.machines.find(({ flavor }) => flavor === this.activeOrder.flavor);
+      const machine = this.machines.find(({ id }) => id === this.activeOrder.machineId);
       if (!machine || !this._near(playerPosition, machine.standPoint)) return;
-      this._triggerMachine(machine, elapsed);
+      const dispenseSpeed = this._triggerMachine(machine, elapsed);
       this.characterSystem.playPlayerAction('Pickup');
       this.stage = 'dispensing';
-      const productionSpeed = this.hiringSystem?.productionSpeedMultiplier ?? 1;
-      this.dispenseReadyAt = elapsed + 0.74 / productionSpeed;
+      this.dispenseReadyAt = elapsed + 0.74 / dispenseSpeed;
       this._setTargetMarker(null);
       this._setStatus(`Dispensing ${machine.label.toLowerCase()}…`, 'The machine is filling the order tray');
       return;
@@ -1164,24 +1160,10 @@ export class IceCreamProductionSystem {
   }
 }
 
-function addDisplayProducts(holder, productsScene) {
-  const flavors = ['vanilla', 'strawberry', 'chocolate', 'mint'];
-  flavors.forEach((flavor, index) => {
-    const anchor = findAnchor(holder, `ServingSlot_0${index + 1}`);
-    if (!anchor) return;
-    const product = cloneAsset(productsScene, PRODUCT_NAMES[flavor].cone);
-    orientConeProductUpright(product);
-    product.name = `Display_${flavor}`;
-    product.scale.setScalar(0.4);
-    configureObject(product);
-    anchor.add(product);
-  });
-}
-
 export async function createIceCreamProduction(onProgress) {
   const loader = new GLTFLoader();
   const requests = [
-    ...MACHINE_DEFINITIONS.map(({ url }) => url),
+    VANILLA_MACHINE_URL,
     PRODUCTS_URL,
     SUPPORTS_URL,
   ];
@@ -1193,9 +1175,9 @@ export async function createIceCreamProduction(onProgress) {
     return gltf;
   }));
 
-  const machineGltfs = loaded.slice(0, MACHINE_DEFINITIONS.length);
-  const productsScene = loaded[MACHINE_DEFINITIONS.length].scene;
-  const supportsScene = loaded[MACHINE_DEFINITIONS.length + 1].scene;
+  const vanillaMachineGltf = loaded[0];
+  const productsScene = loaded[1].scene;
+  const supportsScene = loaded[2].scene;
   productsScene.name = 'IceCream_Product_Source_Cache';
   supportsScene.name = 'IceCream_Support_Source_Cache';
   productsScene.visible = false;
@@ -1210,8 +1192,11 @@ export async function createIceCreamProduction(onProgress) {
   group.add(sourceCache);
 
   const collisionRecords = [];
-  const machines = machineGltfs.map((gltf, index) => {
-    const machine = createMachine(gltf, MACHINE_DEFINITIONS[index], collisionRecords);
+  const machines = MACHINE_DEFINITIONS.map((definition) => {
+    const machine = createMachine({
+      scene: vanillaMachineGltf.scene.clone(true),
+      animations: vanillaMachineGltf.animations,
+    }, definition, collisionRecords);
     group.add(machine.model);
     return machine;
   });
@@ -1221,7 +1206,6 @@ export async function createIceCreamProduction(onProgress) {
     resetCloneTransform(model, definition);
     configureObject(model, collisionRecords, definition);
     group.add(model);
-    if (definition.displayProducts) addDisplayProducts(model, productsScene);
     return { definition, model };
   });
 
