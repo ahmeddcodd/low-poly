@@ -183,15 +183,19 @@ export class WorkerAutomationSystem {
     ));
   }
 
-  _setServiceTray(worker, order, visible) {
+  _setServiceTray(worker, order, visible, completed = false) {
     worker.tray.group.visible = visible;
-    if (order?.flavor) {
-      worker.tray.scoopMaterial.color.setHex(FLAVOR_COLORS[order.flavor] ?? FLAVOR_COLORS.vanilla);
-      const isCup = order.container === 'cup';
-      worker.tray.cone.visible = !isCup;
-      worker.tray.cup.visible = isCup;
-      worker.tray.scoop.position.y = isCup ? 0.31 : 0.43;
-    }
+    worker.tray.cone.visible = false;
+    worker.tray.cup.visible = false;
+    worker.tray.scoop.visible = false;
+    if (!visible || !order?.flavor) return;
+
+    worker.tray.scoopMaterial.color.setHex(FLAVOR_COLORS[order.flavor] ?? FLAVOR_COLORS.vanilla);
+    const isCup = order.container === 'cup';
+    worker.tray.cone.visible = !isCup;
+    worker.tray.cup.visible = isCup;
+    worker.tray.scoop.visible = completed;
+    worker.tray.scoop.position.y = isCup ? 0.31 : 0.43;
   }
 
   _resetNavigation(worker) {
@@ -512,7 +516,8 @@ export class WorkerAutomationSystem {
 
         const target = this._serverTarget();
         const carrying = !['need-container', 'waiting', 'complete'].includes(stage);
-        this._setServiceTray(worker, activeOrder, carrying);
+        const completed = ['need-serve', 'serving', 'waiting-for-table'].includes(stage);
+        this._setServiceTray(worker, activeOrder, carrying, completed);
         if (!target) {
           setWorkerAnimation(worker, carrying ? 'Carry_Idle' : 'Idle', this.speedLevel);
           return;

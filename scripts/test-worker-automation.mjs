@@ -22,8 +22,8 @@ function makeProductionSystem(order, stage = 'need-container') {
       ['serve', new THREE.Vector3(1.55, 0, -2.12)],
     ]),
     machines: [
-      { id: 'vanilla-1', flavor: 'vanilla', standPoint: new THREE.Vector3(-6.4, 0, -3.8) },
-      { id: 'vanilla-2', flavor: 'vanilla', standPoint: new THREE.Vector3(-4, 0, -3.8) },
+      { id: 'vanilla-1', flavor: 'vanilla', standPoint: new THREE.Vector3(0.8, 0, -3.8) },
+      { id: 'vanilla-2', flavor: 'vanilla', standPoint: new THREE.Vector3(-1.6, 0, -3.8) },
     ],
     tableCleanup: null,
     calls,
@@ -81,9 +81,21 @@ assert.equal(system.counterWorkerActive, true);
 assert.equal(system.assignedServerIndex, 0);
 assert.equal(production.stage, 'need-machine');
 
-cashier.model.position.copy(production.machines.find(({ id }) => id === 'vanilla-2').standPoint);
+const vanillaMachine = production.machines.find(({ id }) => id === 'vanilla-2');
+const machineStartDistance = cashier.model.position.distanceTo(vanillaMachine.standPoint);
+system.update(0.25, 1.25);
+assert.equal(production.stage, 'need-machine');
+assert.equal(cashier.currentAnimation, 'Carry_Walk');
+assert.ok(cashier.model.position.distanceTo(vanillaMachine.standPoint) < machineStartDistance);
+assert.equal(cashier.tray.group.visible, true);
+assert.equal(cashier.tray.cup.visible, true);
+assert.equal(cashier.tray.cone.visible, false);
+assert.equal(cashier.tray.scoop.visible, false, 'cup must stay empty before reaching the machine');
+
+cashier.model.position.copy(vanillaMachine.standPoint);
 system.update(0.016, 2);
 assert.equal(production.stage, 'dispensing');
+assert.equal(cashier.tray.scoop.visible, false, 'cup must stay empty while the machine dispenses');
 
 production.stage = 'need-serve';
 
@@ -95,11 +107,15 @@ assert.equal(cashier.currentAnimation, 'Serve');
 assert.equal(cashier.tray.group.visible, true);
 assert.equal(cashier.tray.cup.visible, true);
 assert.equal(cashier.tray.cone.visible, false);
+assert.equal(cashier.tray.scoop.visible, true, 'scoop appears only after dispensing');
 assert.equal(cashier.tray.scoopMaterial.color.getHex(), 0xffe7a0);
 
 system._setServiceTray(cashier, { flavor: 'vanilla', container: 'cone' }, true);
 assert.equal(cashier.tray.cone.visible, true);
 assert.equal(cashier.tray.cup.visible, false);
+assert.equal(cashier.tray.scoop.visible, false, 'cone must be empty before dispensing');
+system._setServiceTray(cashier, { flavor: 'vanilla', container: 'cone' }, true, true);
+assert.equal(cashier.tray.scoop.visible, true);
 assert.equal(cashier.tray.cone.rotation.x, Math.PI);
 assert.ok(cashier.tray.cone.position.y < cashier.tray.scoop.position.y);
 assert.equal(cashier.tray.scoopMaterial.color.getHex(), 0xffe7a0);
