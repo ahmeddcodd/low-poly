@@ -270,7 +270,7 @@ const SIMPLE_STEP_OVERRIDES = Object.freeze({
     unlockType: 'machine',
     unlockId: 'vanilla-1',
     cost: 100,
-    position: Object.freeze([-6.4, 0.04, -3.45]),
+    position: Object.freeze([0.8, 0.04, -3.45]),
     label: 'VANILLA 1',
     footer: 'START PRODUCTION',
     title: 'Install the first vanilla machine',
@@ -302,7 +302,7 @@ const SIMPLE_STEP_OVERRIDES = Object.freeze({
     unlockType: 'machine',
     unlockId: 'vanilla-2',
     cost: 80,
-    position: Object.freeze([-4, 0.04, -3.45]),
+    position: Object.freeze([-1.6, 0.04, -3.45]),
     label: 'VANILLA 2',
     footer: '2X CAPACITY',
     title: 'Increase vanilla production',
@@ -313,7 +313,7 @@ const SIMPLE_STEP_OVERRIDES = Object.freeze({
     unlockType: 'machine',
     unlockId: 'vanilla-3',
     cost: 100,
-    position: Object.freeze([-1.6, 0.04, -3.45]),
+    position: Object.freeze([-4, 0.04, -3.45]),
     label: 'VANILLA 3',
     footer: '3X CAPACITY',
     title: 'Maximise vanilla production',
@@ -724,7 +724,7 @@ export class ShopProgressionSystem {
     if (advanced && this.complete) {
       this.productionSystem.setStatus(
         'Ice cream shop story complete!',
-        'The full shop, four flavours, expanded seating, HR, GM, and the two-worker team are active',
+        'The full shop, three vanilla machines, expanded seating, HR, GM, and the two-worker team are active',
       );
     }
   }

@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import * as THREE from 'three';
 import { CharacterSystem } from '../src/character-system.js';
-import { IceCreamProductionSystem, PRODUCTION_STATION_IDS, VANILLA_MACHINE_IDS } from '../src/ice-cream-production.js';
+import { IceCreamProductionSystem, PRODUCTION_STATION_IDS, VANILLA_MACHINE_IDS, VANILLA_MACHINE_POSITIONS } from '../src/ice-cream-production.js';
 
 assert.deepEqual(PRODUCTION_STATION_IDS, ['cone', 'cup']);
 assert.deepEqual(VANILLA_MACHINE_IDS, ['vanilla-1', 'vanilla-2', 'vanilla-3']);
+assert.deepEqual(VANILLA_MACHINE_POSITIONS, {
+  'vanilla-1': [0.8, 0.02, -4.72],
+  'vanilla-2': [-1.6, 0.02, -4.72],
+  'vanilla-3': [-4, 0.02, -4.72],
+});
+const indexHtml = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+assert.doesNotMatch(indexHtml, /id="objective"/);
 
 const characterSystem = new CharacterSystem();
 assert.equal(characterSystem.playerMarker.visible, true);

@@ -10,7 +10,6 @@ const loadingFill = document.querySelector('#loading-fill');
 const loadingValue = document.querySelector('#loading-value');
 const errorPanel = document.querySelector('#error-panel');
 const resetButton = document.querySelector('#reset-view');
-const objective = document.querySelector('#objective');
 const movementStick = document.querySelector('#movement-stick');
 const cashChip = document.querySelector('.cash-chip');
 const cashValue = cashChip.querySelector('strong');
@@ -45,7 +44,6 @@ const timer = new THREE.Timer();
 timer.connect(document);
 let restaurantScene = null;
 let running = true;
-let displayedStatusRevision = -1;
 let displayedCash = -1;
 let displayedUpgradeRevision = -1;
 let displayedUpgradeCash = -1;
@@ -162,12 +160,6 @@ function syncGameHud() {
     cashChip.setAttribute('aria-label', `Cash: ${production.cash}`);
   }
 
-  if (production.statusRevision === displayedStatusRevision) return;
-  displayedStatusRevision = production.statusRevision;
-  objective.querySelector('strong').textContent = production.status.title;
-  objective.querySelector('span').textContent = production.status.detail;
-  objective.classList.remove('is-selected');
-  requestAnimationFrame(() => objective.classList.add('is-selected'));
 }
 
 function bindInterface() {

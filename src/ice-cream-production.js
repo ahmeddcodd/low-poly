@@ -7,27 +7,32 @@ import { STORY_SERVICE_GOAL, TUTORIAL_COLLECTION_TARGET } from './progression-sy
 
 const VANILLA_MACHINE_URL = new URL('../ice_cream_glb/machine_vanilla.glb', import.meta.url).href;
 export const VANILLA_MACHINE_IDS = Object.freeze(['vanilla-1', 'vanilla-2', 'vanilla-3']);
+export const VANILLA_MACHINE_POSITIONS = Object.freeze({
+  'vanilla-1': Object.freeze([0.8, 0.02, -4.72]),
+  'vanilla-2': Object.freeze([-1.6, 0.02, -4.72]),
+  'vanilla-3': Object.freeze([-4, 0.02, -4.72]),
+});
 const MACHINE_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: VANILLA_MACHINE_IDS[0],
     flavor: 'vanilla',
     label: 'Vanilla',
     color: 0xffe7a0,
-    position: Object.freeze([-6.4, 0.02, -4.72]),
+    position: VANILLA_MACHINE_POSITIONS[VANILLA_MACHINE_IDS[0]],
   }),
   Object.freeze({
     id: VANILLA_MACHINE_IDS[1],
     flavor: 'vanilla',
     label: 'Vanilla',
     color: 0xffe7a0,
-    position: Object.freeze([-4, 0.02, -4.72]),
+    position: VANILLA_MACHINE_POSITIONS[VANILLA_MACHINE_IDS[1]],
   }),
   Object.freeze({
     id: VANILLA_MACHINE_IDS[2],
     flavor: 'vanilla',
     label: 'Vanilla',
     color: 0xffe7a0,
-    position: Object.freeze([-1.6, 0.02, -4.72]),
+    position: VANILLA_MACHINE_POSITIONS[VANILLA_MACHINE_IDS[2]],
   }),
 ]);
 

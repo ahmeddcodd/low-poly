@@ -29,6 +29,12 @@ assert.deepEqual(
 );
 assert.equal(STORY_STEPS.some(({ unlockType }) => unlockType === 'flavor'), false);
 assert.deepEqual(
+  STORY_STEPS
+    .filter(({ unlockType }) => unlockType === 'machine')
+    .map(({ position }) => position),
+  [[0.8, 0.04, -3.45], [-1.6, 0.04, -3.45], [-4, 0.04, -3.45]],
+);
+assert.deepEqual(
   STORY_STEPS.filter(({ type }) => type === 'manager').map(({ managerId }) => managerId),
   ['gym-manager', 'wc-manager'],
 );

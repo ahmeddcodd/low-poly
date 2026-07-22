@@ -253,41 +253,6 @@ button { font: inherit; }
   transform: translate(-50%, -50%);
 }
 
-.objective {
-  position: absolute;
-  top: calc(94px + env(safe-area-inset-top));
-  left: 50%;
-  display: flex;
-  min-width: min(460px, calc(100vw - 32px));
-  padding: 9px 18px 10px;
-  flex-direction: column;
-  gap: 2px;
-  align-items: center;
-  color: #273128;
-  text-align: center;
-  background: rgba(255, 255, 242, 0.86);
-  border: 2px solid rgba(255, 255, 255, 0.8);
-  border-radius: 16px;
-  box-shadow: 0 6px 18px rgba(44, 73, 35, 0.14);
-  transform: translateX(-50%);
-  backdrop-filter: blur(6px);
-  transition: transform 180ms ease, background 180ms ease;
-}
-
-.objective.is-selected {
-  background: rgba(239, 255, 221, 0.94);
-  transform: translateX(-50%) scale(1.025);
-}
-
-.objective strong { font-size: clamp(16px, 2.2vw, 21px); }
-
-.objective span {
-  color: #5d695f;
-  font-family: "Trebuchet MS", system-ui, sans-serif;
-  font-size: clamp(12px, 1.6vw, 14px);
-  font-weight: 700;
-}
-
 .controls-hint {
   position: absolute;
   bottom: calc(21px + env(safe-area-inset-bottom));
@@ -629,11 +594,6 @@ button { font: inherit; }
   .cash-chip strong { font-size: 19px; }
   .cash-stack { width: 39px; transform: scale(0.78); transform-origin: left center; }
 
-  .objective {
-    top: calc(80px + env(safe-area-inset-top));
-    padding: 8px 13px;
-    border-radius: 14px;
-  }
 
   .manager-upgrades {
     right: 8px;
@@ -673,7 +633,6 @@ button { font: inherit; }
     width: calc(100vw - 24px);
     min-width: 0;
   }
-  .objective { top: calc(138px + env(safe-area-inset-top)); }
   .manager-card { padding-left: 8px; grid-template-rows: auto auto auto; align-content: center; text-align: center; }
   .manager-card__icon { display: none; }
   .manager-card__levels { justify-content: center; }
