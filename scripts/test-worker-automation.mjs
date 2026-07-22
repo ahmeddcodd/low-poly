@@ -22,8 +22,8 @@ function makeProductionSystem(order, stage = 'need-container') {
       ['serve', new THREE.Vector3(1.55, 0, -2.12)],
     ]),
     machines: [
-      { id: 'vanilla-1', flavor: 'vanilla', standPoint: new THREE.Vector3(0.8, 0, -3.8) },
-      { id: 'vanilla-2', flavor: 'vanilla', standPoint: new THREE.Vector3(-1.6, 0, -3.8) },
+      { id: 'vanilla-1', flavor: 'vanilla', standPoint: new THREE.Vector3(0.8, 0, -4.42) },
+      { id: 'vanilla-2', flavor: 'vanilla', standPoint: new THREE.Vector3(-1.6, 0, -4.42) },
     ],
     tableCleanup: null,
     calls,

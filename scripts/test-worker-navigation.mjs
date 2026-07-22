@@ -75,6 +75,27 @@ assert.equal(arrived, true);
 assert.ok(greatestDetour > obstacle.maxZ + EXPECTED_WORKER_CLEARANCE, 'worker clearance was not preserved');
 assert.ok(Math.hypot(worker.model.position.x - target[0], worker.model.position.z - target[1]) < 0.03);
 
+assert.equal(system._isNavigationBlocked(3, -4.9, worker), true);
+worker.model.position.set(3.6, 0, -4.35);
+system._resetNavigation(worker);
+const serviceTarget = [0.8, -4.42];
+let serviceArrived = false;
+let minimumServiceZ = worker.model.position.z;
+for (let frame = 0; frame < 1200 && !serviceArrived; frame += 1) {
+  serviceArrived = system._moveWorker(worker, serviceTarget, 1 / 60, true);
+  minimumServiceZ = Math.min(minimumServiceZ, worker.model.position.z);
+}
+assert.equal(serviceArrived, true);
+assert.ok(minimumServiceZ >= -4.78 - 1e-6, 'server routed behind the machine line');
+
+worker.model.position.set(3, 0, -5.1);
+system._resetNavigation(worker);
+system._moveWorker(worker, [3, -4.4], 1 / 60, true);
+assert.ok(
+  worker.model.position.z >= -4.78 - 1e-6,
+  'server was not recovered from behind the machine line',
+);
+
 const dirtyTable = {
   id: 'test-table',
   state: 'dirty',
@@ -126,6 +147,7 @@ for (let frame = 0; frame < 2400 && !cleanupCalls.includes('picked-up'); frame +
 assert.deepEqual(cleanupCalls, ['picked-up']);
 assert.equal(cleaner.state, 'to-bin');
 const pickupPosition = cleaner.model.position.clone();
+assert.equal(system._isNavigationBlocked(3, -4.9, cleaner), false);
 system.update(1 / 60, 40);
 system.update(1 / 60, 40 + 1 / 60);
 assert.deepEqual(cleanupCalls, ['picked-up'], 'cleaner treated a failed route as bin arrival');

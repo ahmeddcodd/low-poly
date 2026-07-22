@@ -8,9 +8,9 @@ import { STORY_SERVICE_GOAL, TUTORIAL_COLLECTION_TARGET } from './progression-sy
 const VANILLA_MACHINE_URL = new URL('../ice_cream_glb/machine_vanilla.glb', import.meta.url).href;
 export const VANILLA_MACHINE_IDS = Object.freeze(['vanilla-1', 'vanilla-2', 'vanilla-3']);
 export const VANILLA_MACHINE_POSITIONS = Object.freeze({
-  'vanilla-1': Object.freeze([0.8, 0.02, -4.72]),
-  'vanilla-2': Object.freeze([-1.6, 0.02, -4.72]),
-  'vanilla-3': Object.freeze([-4, 0.02, -4.72]),
+  'vanilla-1': Object.freeze([0.8, 0.02, -6.42]),
+  'vanilla-2': Object.freeze([-1.6, 0.02, -6.42]),
+  'vanilla-3': Object.freeze([-4, 0.02, -6.42]),
 });
 const MACHINE_DEFINITIONS = Object.freeze([
   Object.freeze({

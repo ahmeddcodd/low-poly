@@ -9,6 +9,7 @@ const NAV_CELL_SIZE = 0.42;
 const NAV_GOAL_EPSILON = 0.06;
 const NAV_SEGMENT_STEP = 0.16;
 const NAV_MAX_SEARCH_NODES = 3500;
+const SERVICE_AISLE_BACK_LIMIT = -4.78;
 const LOOPING_ACTIONS = new Set(['Idle', 'Walk_Player', 'Carry_Idle', 'Carry_Walk']);
 const SERVICE_ROLES = new Set(['server']);
 const FLAVOR_COLORS = Object.freeze({
@@ -205,7 +206,8 @@ export class WorkerAutomationSystem {
     worker.navigationIndex = 0;
   }
 
-  _isNavigationBlocked(x, z) {
+  _isNavigationBlocked(x, z, worker = null) {
+    if (worker?.role === 'server' && z < SERVICE_AISLE_BACK_LIMIT) return true;
     const bounds = WORLD_CONFIG.playerBounds;
     if (x < bounds.minX + WORKER_CLEARANCE
       || x > bounds.maxX - WORKER_CLEARANCE
@@ -220,14 +222,14 @@ export class WorkerAutomationSystem {
     ));
   }
 
-  _segmentIsClear(startX, startZ, endX, endZ) {
+  _segmentIsClear(startX, startZ, endX, endZ, worker = null) {
     const distance = Math.hypot(endX - startX, endZ - startZ);
     const steps = Math.max(1, Math.ceil(distance / NAV_SEGMENT_STEP));
     for (let index = 1; index <= steps; index += 1) {
       const ratio = index / steps;
       const x = THREE.MathUtils.lerp(startX, endX, ratio);
       const z = THREE.MathUtils.lerp(startZ, endZ, ratio);
-      if (this._isNavigationBlocked(x, z)) return false;
+      if (this._isNavigationBlocked(x, z, worker)) return false;
     }
     return true;
   }
@@ -238,7 +240,7 @@ export class WorkerAutomationSystem {
 
     const startX = worker.model.position.x;
     const startZ = worker.model.position.z;
-    if (this._segmentIsClear(startX, startZ, target[0], target[1])) {
+    if (this._segmentIsClear(startX, startZ, target[0], target[1], worker)) {
       worker.navigationGoal = target;
       worker.navigationArrival = target;
       worker.navigationPath.push(target);
@@ -271,7 +273,7 @@ export class WorkerAutomationSystem {
       const key = cellKey(x, z);
       if (!blockedCache.has(key)) {
         const point = cellPoint(x, z);
-        blockedCache.set(key, this._isNavigationBlocked(point[0], point[1]));
+        blockedCache.set(key, this._isNavigationBlocked(point[0], point[1], worker));
       }
       return blockedCache.get(key);
     };
@@ -373,8 +375,8 @@ export class WorkerAutomationSystem {
     reversePath.reverse();
 
     const goalPoint = cellPoint(goalCell.x, goalCell.z);
-    const exactTargetIsUsable = !this._isNavigationBlocked(target[0], target[1])
-      && this._segmentIsClear(goalPoint[0], goalPoint[1], target[0], target[1]);
+    const exactTargetIsUsable = !this._isNavigationBlocked(target[0], target[1], worker)
+      && this._segmentIsClear(goalPoint[0], goalPoint[1], target[0], target[1], worker);
     const candidates = reversePath;
     if (exactTargetIsUsable) candidates.push(target);
     const arrival = exactTargetIsUsable ? target : goalPoint;
@@ -386,7 +388,7 @@ export class WorkerAutomationSystem {
       let furthest = candidateIndex;
       for (let index = candidates.length - 1; index > candidateIndex; index -= 1) {
         const candidate = candidates[index];
-        if (this._segmentIsClear(anchorX, anchorZ, candidate[0], candidate[1])) {
+        if (this._segmentIsClear(anchorX, anchorZ, candidate[0], candidate[1], worker)) {
           furthest = index;
           break;
         }
@@ -404,12 +406,16 @@ export class WorkerAutomationSystem {
   }
 
   _moveWorker(worker, target, delta, carrying = false) {
-    if (this._isNavigationBlocked(worker.model.position.x, worker.model.position.z)) {
-      const safePoint = this.characterSystem.findNearestNavigationPoint?.(
-        worker.model.position.x,
-        worker.model.position.z,
-        WORKER_CLEARANCE,
-      );
+    if (this._isNavigationBlocked(worker.model.position.x, worker.model.position.z, worker)) {
+      const behindServiceAisle = worker.role === 'server'
+        && worker.model.position.z < SERVICE_AISLE_BACK_LIMIT;
+      const safePoint = behindServiceAisle
+        ? { x: worker.model.position.x, z: SERVICE_AISLE_BACK_LIMIT }
+        : this.characterSystem.findNearestNavigationPoint?.(
+          worker.model.position.x,
+          worker.model.position.z,
+          WORKER_CLEARANCE,
+        );
       if (!safePoint) {
         setWorkerAnimation(worker, carrying ? 'Carry_Idle' : 'Idle', this.speedLevel);
         return false;
@@ -446,7 +452,7 @@ export class WorkerAutomationSystem {
     const directionZ = deltaZ / Math.max(distance, 0.001);
     const nextX = worker.model.position.x + directionX * step;
     const nextZ = worker.model.position.z + directionZ * step;
-    if (this._isNavigationBlocked(nextX, nextZ)) {
+    if (this._isNavigationBlocked(nextX, nextZ, worker)) {
       this._resetNavigation(worker);
       setWorkerAnimation(worker, carrying ? 'Carry_Idle' : 'Idle', this.speedLevel);
       return false;

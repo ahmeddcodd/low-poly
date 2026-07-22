@@ -8,9 +8,15 @@ const TABLE_INTERACTION_RADIUS = 1.2;
 const BIN_INTERACTION_RADIUS = 1.2;
 const TRASH_BIN_HALF_WIDTH = 0.75;
 const TRASH_BIN_HALF_DEPTH = 0.45;
-const DISPOSAL_DURATION = 1.16;
+const DISPOSAL_DURATION = 1.5;
 const LID_CLOSED_ANGLE = -0.08;
 const LID_OPEN_ANGLE = 1.18;
+const LID_OPEN_END = 0.24;
+const DROP_START = 0.3;
+const DROP_END = 0.7;
+const LID_CLOSE_START = 0.74;
+const TRASH_DROP_TARGET_HEIGHT = 0.78;
+const TRASH_DROP_TARGET_FRONT_OFFSET = -0.28;
 
 export const TRASH_BIN_COLLIDER = Object.freeze({
   name: 'Procedural_Trash_Bin_Collider',
@@ -283,14 +289,12 @@ export class TableCleanupSystem {
     const table = this.characterSystem.getDiningTable(tableId);
     if (table?.state !== 'garbage-carried') return false;
 
-    actorModel.updateMatrixWorld(true);
-    actorModel.getWorldPosition(this.scratchStart);
-    this.scratchStart.y += 0.88;
-    this.scratchStart.z += 0.16;
+    carryRig.updateWorldMatrix(true, false);
+    carryRig.getWorldPosition(this.scratchStart);
     carryRig.visible = false;
     this.dropRig.position.copy(this.scratchStart);
     this.dropRig.rotation.set(0, actorModel.rotation.y, 0);
-    this.dropRig.scale.setScalar(0.8);
+    this.dropRig.scale.setScalar(0.78);
     this.dropRig.visible = true;
     this.disposal = {
       owner,
@@ -299,6 +303,7 @@ export class TableCleanupSystem {
       carryRig,
       startedAt: elapsed,
       start: this.scratchStart.clone(),
+      startYaw: actorModel.rotation.y,
     };
     this.lidState = 'opening';
     if (owner === 'player') this.characterSystem.setPlayerCarrying(false);
@@ -318,21 +323,39 @@ export class TableCleanupSystem {
       1,
     );
 
-    const openProgress = easeInOut(progress / 0.28);
-    const closeProgress = easeInOut((progress - 0.72) / 0.28);
+    const openProgress = easeInOut(progress / LID_OPEN_END);
+    const closeProgress = easeInOut(
+      (progress - LID_CLOSE_START) / (1 - LID_CLOSE_START),
+    );
     const lidBlend = openProgress * (1 - closeProgress);
     this.lidPivot.rotation.x = THREE.MathUtils.lerp(LID_CLOSED_ANGLE, LID_OPEN_ANGLE, lidBlend);
-    this.lidState = progress < 0.28 ? 'opening' : progress < 0.72 ? 'open' : progress < 1 ? 'closing' : 'closed';
+    this.lidState = progress < LID_OPEN_END
+      ? 'opening'
+      : progress < LID_CLOSE_START
+        ? 'open'
+        : progress < 1
+          ? 'closing'
+          : 'closed';
 
-    const dropProgress = easeInOut((progress - 0.18) / 0.58);
-    this.scratchTarget.set(TRASH_BIN_POSITION[0], 0.94, TRASH_BIN_POSITION[2] - 0.28);
+    const dropProgress = easeInOut(
+      (progress - DROP_START) / (DROP_END - DROP_START),
+    );
+    this.scratchTarget.set(
+      TRASH_BIN_POSITION[0],
+      TRASH_DROP_TARGET_HEIGHT,
+      TRASH_BIN_POSITION[2] + TRASH_DROP_TARGET_FRONT_OFFSET,
+    );
     this.scratchPosition.lerpVectors(this.disposal.start, this.scratchTarget, dropProgress);
-    this.scratchPosition.y += Math.sin(dropProgress * Math.PI) * 0.42;
+    this.scratchPosition.y += Math.sin(dropProgress * Math.PI) * 0.5;
     this.dropRig.position.copy(this.scratchPosition);
-    this.dropRig.rotation.y += 0.055;
-    this.dropRig.rotation.z = dropProgress * 0.42;
-    this.dropRig.scale.setScalar(THREE.MathUtils.lerp(0.8, 0.16, dropProgress));
-    this.dropRig.visible = progress < 0.83;
+    this.dropRig.rotation.set(
+      dropProgress * 0.55,
+      this.disposal.startYaw + dropProgress * Math.PI * 1.6,
+      dropProgress * 0.45,
+    );
+    const shrinkProgress = easeInOut((dropProgress - 0.62) / 0.38);
+    this.dropRig.scale.setScalar(THREE.MathUtils.lerp(0.78, 0.08, shrinkProgress));
+    this.dropRig.visible = progress < LID_CLOSE_START && dropProgress < 1;
 
     if (progress < 1) {
       return this.disposal.owner === 'player'
@@ -346,6 +369,7 @@ export class TableCleanupSystem {
     this.disposal = null;
     this.dropRig.visible = false;
     this.dropRig.scale.setScalar(1);
+    this.dropRig.rotation.set(0, 0, 0);
     this.lidPivot.rotation.x = LID_CLOSED_ANGLE;
     this.lidState = 'closed';
     if (completed.owner === 'player') {
@@ -395,7 +419,7 @@ export class TableCleanupSystem {
       if (squaredDistanceXZ(playerPosition, TRASH_BIN_INTERACTION_POINT)
         <= BIN_INTERACTION_RADIUS * BIN_INTERACTION_RADIUS) {
         if (this._startDisposal('player', this.characterSystem.player.model, this.carryingTableId, this.carryRig, elapsed)) {
-          this.characterSystem.playPlayerAction('Serve', 0.74);
+          this.characterSystem.playPlayerAction('Serve', 1.35);
           return { type: 'disposing', tableId: this.carryingTableId };
         }
       }
