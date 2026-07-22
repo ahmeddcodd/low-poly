@@ -454,8 +454,7 @@ function createCashPile() {
   return { group, bills, accents };
 }
 
-function disposeObjectResources(roots) {
-function createCounterStockDisplay(productsScene, container) {
+export function createCounterStockDisplay(productsScene, container) {
   const group = new THREE.Group();
   group.name = `Counter_Stock_${container}`;
   group.position.set(...COUNTER_STOCK_POSITIONS[container]);
@@ -491,6 +490,7 @@ function createCounterStockDisplay(productsScene, container) {
   return { group, products };
 }
 
+function disposeObjectResources(roots) {
   const geometries = new Set();
   const materials = new Set();
   const textures = new Set();

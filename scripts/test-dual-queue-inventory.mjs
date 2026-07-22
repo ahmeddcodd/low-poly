@@ -5,12 +5,29 @@ import {
   CUSTOMER_QUEUE_CONTAINERS,
   CUSTOMER_QUEUE_LANES,
 } from '../src/character-system.js';
-import { IceCreamProductionSystem, MAX_ORDER_AMOUNT } from '../src/ice-cream-production.js';
+import {
+  createCounterStockDisplay,
+  IceCreamProductionSystem,
+  MAX_ORDER_AMOUNT,
+} from '../src/ice-cream-production.js';
 
 assert.deepEqual(CUSTOMER_QUEUE_CONTAINERS, ['cone', 'cup']);
 assert.equal(CUSTOMER_QUEUE_LANES.cone.length, 4);
 assert.equal(CUSTOMER_QUEUE_LANES.cup.length, 4);
 assert.equal(MAX_ORDER_AMOUNT, 3);
+
+const productAssets = new THREE.Group();
+const coneAsset = new THREE.Group();
+coneAsset.name = 'Product_Vanilla_Cone';
+const cupAsset = new THREE.Group();
+cupAsset.name = 'Product_Vanilla_Cup';
+productAssets.add(coneAsset, cupAsset);
+const coneStockDisplay = createCounterStockDisplay(productAssets, 'cone');
+const cupStockDisplay = createCounterStockDisplay(productAssets, 'cup');
+assert.equal(coneStockDisplay.products.length, 9);
+assert.equal(cupStockDisplay.products.length, 9);
+assert.equal(coneStockDisplay.group.name, 'Counter_Stock_cone');
+assert.equal(cupStockDisplay.group.name, 'Counter_Stock_cup');
 
 function customer(id, container, queueIndex, amount) {
   return {
