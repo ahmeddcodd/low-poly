@@ -253,6 +253,8 @@ function animate(timestamp) {
     canvas.dataset.supportStationsVisible = String(
       restaurantScene.iceCreamProduction.supportStationsVisible,
     );
+    canvas.dataset.machineOutputAmount = String(restaurantScene.iceCreamProduction.machineOutputAmount);
+    canvas.dataset.counterCupStock = String(restaurantScene.iceCreamProduction.counterStock.cup ?? 0);
     canvas.dataset.totalCollectedCash = String(
       restaurantScene.iceCreamProduction.totalCollectedCash,
     );
@@ -299,7 +301,7 @@ async function boot() {
       characters: restaurantScene.characterSystem.characters.length,
       player: restaurantScene.characterSystem.player?.definition.id,
       customers: restaurantScene.characterSystem.customers.length,
-      customerFlow: 'closed shop -> starter build -> entrance -> order counter queue',
+      customerFlow: 'closed shop -> starter build -> entrance -> cup queue -> machine output -> counter stock',
       wallColliders: restaurantScene.wallColliders.length,
       furniture: restaurantScene.iceCreamShop.instances.length,
       furnitureColliders: restaurantScene.furnitureColliders.length,

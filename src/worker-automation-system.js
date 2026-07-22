@@ -206,18 +206,14 @@ export class WorkerAutomationSystem {
     worker.tray.cones.forEach((product) => { product.visible = false; });
     worker.tray.cups.forEach((product) => { product.visible = false; });
     worker.tray.scoops.forEach((product) => { product.visible = false; });
-    if (!visible || !order?.flavor) return;
+    if (!visible || !order?.flavor || !completed) return;
 
     worker.tray.scoopMaterial.color.setHex(FLAVOR_COLORS[order.flavor] ?? FLAVOR_COLORS.vanilla);
-    const isCup = order.container === 'cup';
     const amount = THREE.MathUtils.clamp(Math.floor(order.amount ?? 1), 1, 3);
     for (let index = 0; index < amount; index += 1) {
-      worker.tray.cones[index].visible = !isCup;
-      worker.tray.cups[index].visible = isCup;
-      worker.tray.scoops[index].visible = completed;
-      worker.tray.scoops[index].position.y = isCup
-        ? 0.31 + index * 0.2
-        : 0.43 + index * 0.25;
+      worker.tray.cups[index].visible = true;
+      worker.tray.scoops[index].visible = true;
+      worker.tray.scoops[index].position.y = 0.31 + index * 0.2;
     }
   }
 
@@ -527,13 +523,13 @@ export class WorkerAutomationSystem {
   _serverTarget() {
     const { activeOrder, stage } = this.productionSystem;
     if (!activeOrder) return null;
-    if (stage === 'need-container') {
-      const point = this.productionSystem.stationPoints.get(activeOrder.container);
-      return point ? [point.x, point.z] : null;
-    }
     if (stage === 'need-machine' || stage === 'dispensing') {
       const machine = this.productionSystem.machines.find(({ id }) => id === activeOrder.machineId);
       return machine ? [machine.standPoint.x, machine.standPoint.z] : null;
+    }
+    if (stage === 'need-pickup') {
+      const point = this.productionSystem.stationPoints.get('machine-output');
+      return point ? [point.x, point.z] : null;
     }
     if (stage === 'need-serve' || stage === 'serving' || stage === 'waiting-for-table') {
       const point = this.productionSystem.stationPoints.get('serve');
@@ -569,8 +565,8 @@ export class WorkerAutomationSystem {
         }
 
         const target = this._serverTarget();
-        const carrying = !['need-container', 'waiting', 'complete'].includes(stage);
-        const completed = ['need-serve', 'serving', 'waiting-for-table'].includes(stage);
+        const carrying = !['waiting', 'complete'].includes(stage);
+        const completed = ['need-serve', 'serving'].includes(stage);
         this._setServiceTray(worker, activeOrder, carrying, completed);
         if (!target) {
           setWorkerAnimation(worker, carrying ? 'Carry_Idle' : 'Idle', this.speedLevel);
@@ -594,8 +590,8 @@ export class WorkerAutomationSystem {
           return;
         }
         setWorkerAnimation(worker, carrying ? 'Carry_Idle' : 'Idle', this.speedLevel);
-        worker.state = carrying ? 'preparing-order' : 'collecting-container';
-        if (!['need-container', 'need-machine'].includes(stage)) return;
+        worker.state = stage === 'need-pickup' ? 'collecting-stack' : 'preparing-order';
+        if (!['need-machine', 'need-pickup'].includes(stage)) return;
         if (worker.lastHandledStage === stage) return;
         worker.lastHandledStage = stage;
         setWorkerAnimation(worker, 'Pickup', this.speedLevel, 0.08);

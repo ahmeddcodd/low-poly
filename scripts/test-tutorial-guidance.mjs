@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { CharacterSystem } from '../src/character-system.js';
 import { IceCreamProductionSystem, PRODUCTION_STATION_IDS, VANILLA_MACHINE_IDS, VANILLA_MACHINE_POSITIONS } from '../src/ice-cream-production.js';
 
-assert.deepEqual(PRODUCTION_STATION_IDS, ['cone', 'cup']);
+assert.deepEqual(PRODUCTION_STATION_IDS, ['machine-output']);
 assert.deepEqual(VANILLA_MACHINE_IDS, ['vanilla-1', 'vanilla-2', 'vanilla-3']);
 assert.deepEqual(VANILLA_MACHINE_POSITIONS, {
   'vanilla-1': [0.8, 0.02, -6.42],
@@ -77,8 +77,7 @@ routedProduction.machines = [
 ];
 routedProduction.servedCount = 1;
 routedProduction.tutorialGuidanceActive = false;
-routedProduction.counterStock = { cone: 0, cup: 0 };
-routedProduction.nextProductionContainer = 'cup';
+routedProduction.counterStock = { cup: 0 };
 routedProduction.markers = new Map();
 routedProduction.status = Object.freeze({ title: '', detail: '' });
 routedProduction.statusRevision = 0;
@@ -90,8 +89,9 @@ const cupCustomer = {
   order: Object.freeze({ container: 'cup', amount: 2 }),
 };
 routedProduction.characterSystem = {
-  getFrontCustomers() {
-    return [cupCustomer];
+  getFrontCustomer(container) {
+    assert.equal(container, 'cup');
+    return cupCustomer;
   },
 };
 assert.equal(routedProduction._startOrder(), true);
@@ -103,5 +103,6 @@ assert.deepEqual(routedProduction.activeOrder, {
   machineId: 'vanilla-2',
   customerId: 'test-customer',
 });
-assert.equal(routedProduction.nextProductionContainer, 'cone');
+assert.equal(routedProduction.stage, 'need-machine');
+assert.equal(routedProduction.targetMarkerId, 'machine-vanilla-2');
 console.log('tutorial guidance tests passed');

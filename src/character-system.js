@@ -60,10 +60,9 @@ const CUSTOMER_ENTRY_INSIDE = Object.freeze([-2.5, 6.72]);
 const PLAYER_START_POSITION = Object.freeze([-2.5, 8.15]);
 const ORDER_COUNTER_POINT = Object.freeze([1.55, -0.82]);
 const ORDER_COUNTER_POINTS = Object.freeze({
-  cone: Object.freeze([0.62, -0.82]),
-  cup: Object.freeze([2.48, -0.82]),
+  cup: ORDER_COUNTER_POINT,
 });
-export const CUSTOMER_QUEUE_CONTAINERS = Object.freeze(['cone', 'cup']);
+export const CUSTOMER_QUEUE_CONTAINERS = Object.freeze(['cup']);
 const DINING_TABLE_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: 'compact-table',
@@ -126,26 +125,23 @@ const DINING_SEAT_DEFINITIONS = Object.freeze([
   }),
 ]);
 export const CUSTOMER_QUEUE_LANES = Object.freeze({
-  cone: Object.freeze([
-    Object.freeze([0.62, 0.55]),
-    Object.freeze([0.62, 1.68]),
-    Object.freeze([0.62, 2.81]),
-    Object.freeze([0.62, 3.94]),
-  ]),
   cup: Object.freeze([
-    Object.freeze([2.48, 0.55]),
-    Object.freeze([2.48, 1.68]),
-    Object.freeze([2.48, 2.81]),
-    Object.freeze([2.48, 3.94]),
+    Object.freeze([1.55, 0.55]),
+    Object.freeze([2.55, 1.45]),
+    Object.freeze([3.55, 2.35]),
+    Object.freeze([4.55, 3.3]),
+    Object.freeze([4.75, 4.55]),
+    Object.freeze([3.75, 5.35]),
+    Object.freeze([2.55, 5.85]),
+    Object.freeze([1.15, 6.1]),
   ]),
 });
 const CUSTOMER_QUEUE_ENTRIES = Object.freeze({
-  cone: Object.freeze([0.62, 5.2]),
-  cup: Object.freeze([2.48, 5.2]),
+  cup: Object.freeze([1.15, 6.1]),
 });
 
-function queueContainerFor(customerIndex, visitNumber = 0) {
-  return CUSTOMER_QUEUE_CONTAINERS[(customerIndex + visitNumber) % CUSTOMER_QUEUE_CONTAINERS.length];
+function queueContainerFor() {
+  return 'cup';
 }
 
 function createCustomerOrder(container, customerIndex, visitNumber = 0) {
@@ -563,7 +559,7 @@ export class CharacterSystem {
     this.customerFlowEnabled = nextEnabled;
     if (!nextEnabled) return;
 
-    const laneCounts = { cone: 0, cup: 0 };
+    const laneCounts = { cup: 0 };
     this.customers.forEach((customer, customerIndex) => {
       const queueContainer = queueContainerFor(customerIndex, 1);
       const queueIndex = laneCounts[queueContainer];
@@ -776,7 +772,7 @@ export class CharacterSystem {
 
   _recycleDepartedCustomers(elapsed) {
     if (!this.customerReturnsEnabled) return;
-    const laneCounts = { cone: 0, cup: 0 };
+    const laneCounts = { cup: 0 };
     this.customers.forEach((customer) => {
       if (!['waiting-to-enter', 'walking', 'queued', 'ordering'].includes(customer.state)) return;
       laneCounts[customer.queueContainer] += 1;
@@ -785,14 +781,8 @@ export class CharacterSystem {
     this.customers.forEach((customer) => {
       if (customer.state !== 'departed' || elapsed - customer.departedAt < 2.2) return;
       const nextVisitNumber = customer.visitNumber + 1;
-      const preferredContainer = queueContainerFor(customer.index, nextVisitNumber);
-      const alternateContainer = preferredContainer === 'cone' ? 'cup' : 'cone';
-      const queueContainer = laneCounts[preferredContainer] < CUSTOMER_QUEUE_LANES[preferredContainer].length
-        ? preferredContainer
-        : laneCounts[alternateContainer] < CUSTOMER_QUEUE_LANES[alternateContainer].length
-          ? alternateContainer
-          : null;
-      if (!queueContainer) return;
+      const queueContainer = queueContainerFor();
+      if (laneCounts[queueContainer] >= CUSTOMER_QUEUE_LANES[queueContainer].length) return;
 
       const queueIndex = laneCounts[queueContainer];
       laneCounts[queueContainer] += 1;

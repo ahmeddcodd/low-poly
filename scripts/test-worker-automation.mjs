@@ -10,15 +10,14 @@ function makeSourceCharacter() {
   };
 }
 
-function makeProductionSystem(order, stage = 'need-container') {
+function makeProductionSystem(order, stage = 'need-machine') {
   const calls = [];
   return {
     activeOrder: order,
     stage,
     servedCount: 0,
     stationPoints: new Map([
-      ['cone', new THREE.Vector3(3.6, 0, -3.1)],
-      ['cup', new THREE.Vector3(3.6, 0, -4.35)],
+      ['machine-output', new THREE.Vector3(1.92, 0, -4.45)],
       ['serve', new THREE.Vector3(1.55, 0, -2.12)],
     ]),
     machines: [
@@ -35,8 +34,8 @@ function makeProductionSystem(order, stage = 'need-container') {
         flavor: this.activeOrder.flavor,
         container: this.activeOrder.container,
       });
-      if (this.stage === 'need-container') this.stage = 'need-machine';
-      else if (this.stage === 'need-machine') this.stage = 'dispensing';
+      if (this.stage === 'need-machine') this.stage = 'dispensing';
+      else if (this.stage === 'need-pickup') this.stage = 'need-serve';
       else if (this.stage === 'need-serve') this.stage = 'serving';
       return true;
     },
@@ -55,16 +54,19 @@ assert.equal(system.assignedOrder, vanillaCup);
 assert.equal(system.assignedServerIndex, null);
 system.setWorkerCount(1);
 const cashier = system.workers[0];
-const cupPoint = production.stationPoints.get('cup');
+const vanillaMachine = production.machines.find(({ id }) => id === 'vanilla-2');
 const counterStart = cashier.model.position.clone();
-const startDistance = counterStart.distanceTo(cupPoint);
+const startDistance = counterStart.distanceTo(vanillaMachine.standPoint);
 
 system.update(0.25, 0.5);
 assert.equal(system.assignedServerIndex, 0);
-assert.equal(production.stage, 'need-container');
-assert.equal(cashier.currentAnimation, 'Walk_Player');
-assert.ok(cashier.model.position.distanceTo(cupPoint) < startDistance);
+assert.equal(production.stage, 'need-machine');
+assert.equal(cashier.currentAnimation, 'Carry_Walk');
+assert.ok(cashier.model.position.distanceTo(vanillaMachine.standPoint) < startDistance);
 assert.notDeepEqual(cashier.model.position.toArray(), counterStart.toArray());
+assert.equal(cashier.tray.group.visible, true);
+assert.equal(cashier.tray.cups.filter(({ visible }) => visible).length, 0);
+assert.equal(cashier.tray.scoops.filter(({ visible }) => visible).length, 0);
 
 system.setWorkerCount(2);
 assert.equal(system.workerCount, 2);
@@ -73,33 +75,38 @@ assert.equal(system.workers[1].model.visible, true);
 assert.equal(system.assignedServerIndex, 0, 'hiring the cleaner interrupted the server');
 assert.equal(system.assignedOrder, vanillaCup, 'the server lost its active order');
 
-cashier.model.position.copy(cupPoint);
+cashier.model.position.copy(vanillaMachine.standPoint);
 system.update(0.016, 1);
+assert.equal(production.stage, 'dispensing');
+assert.equal(cashier.currentAnimation, 'Pickup');
+assert.equal(cashier.tray.cups.filter(({ visible }) => visible).length, 0);
 
-assert.equal(system.orderAutomationActive, true);
-assert.equal(system.counterWorkerActive, true);
-assert.equal(system.assignedServerIndex, 0);
-assert.equal(production.stage, 'need-machine');
-
-const vanillaMachine = production.machines.find(({ id }) => id === 'vanilla-2');
-const machineStartDistance = cashier.model.position.distanceTo(vanillaMachine.standPoint);
-system.update(0.25, 1.25);
-assert.equal(production.stage, 'need-machine');
+production.stage = 'need-pickup';
+const outputPoint = production.stationPoints.get('machine-output');
+const outputStartDistance = cashier.model.position.distanceTo(outputPoint);
+system.update(0.25, 2);
+assert.equal(production.stage, 'need-pickup');
 assert.equal(cashier.currentAnimation, 'Carry_Walk');
-assert.ok(cashier.model.position.distanceTo(vanillaMachine.standPoint) < machineStartDistance);
+assert.ok(cashier.model.position.distanceTo(outputPoint) < outputStartDistance);
 assert.equal(cashier.tray.group.visible, true);
+assert.equal(cashier.tray.cups.filter(({ visible }) => visible).length, 0);
+assert.equal(cashier.tray.scoops.filter(({ visible }) => visible).length, 0);
+
+cashier.model.position.copy(outputPoint);
+system.update(0.016, 3);
+assert.equal(production.stage, 'need-serve');
+assert.equal(cashier.state, 'collecting-stack');
+assert.equal(cashier.currentAnimation, 'Pickup');
+
+system.update(0.016, 3.1);
+assert.equal(production.stage, 'need-serve');
 assert.equal(cashier.tray.cup.visible, true);
 assert.equal(cashier.tray.cone.visible, false);
 assert.equal(cashier.tray.cups.filter(({ visible }) => visible).length, 3);
 assert.equal(cashier.tray.cones.filter(({ visible }) => visible).length, 0);
-assert.equal(cashier.tray.scoop.visible, false, 'cup must stay empty before reaching the machine');
-
-cashier.model.position.copy(vanillaMachine.standPoint);
-system.update(0.016, 2);
-assert.equal(production.stage, 'dispensing');
-assert.equal(cashier.tray.scoop.visible, false, 'cup must stay empty while the machine dispenses');
-
-production.stage = 'need-serve';
+assert.equal(cashier.tray.scoop.visible, true);
+assert.equal(cashier.tray.scoops.filter(({ visible }) => visible).length, 3);
+assert.equal(cashier.tray.scoopMaterial.color.getHex(), 0xffe7a0);
 
 cashier.model.position.copy(production.stationPoints.get('serve'));
 system.update(0.016, 4);
@@ -109,23 +116,12 @@ assert.equal(cashier.currentAnimation, 'Serve');
 assert.equal(cashier.tray.group.visible, true);
 assert.equal(cashier.tray.cup.visible, true);
 assert.equal(cashier.tray.cone.visible, false);
-assert.equal(cashier.tray.scoop.visible, true, 'scoop appears only after dispensing');
-assert.equal(cashier.tray.scoops.filter(({ visible }) => visible).length, 3);
-assert.equal(cashier.tray.scoopMaterial.color.getHex(), 0xffe7a0);
-
-system._setServiceTray(cashier, { flavor: 'vanilla', container: 'cone' }, true);
-assert.equal(cashier.tray.cone.visible, true);
-assert.equal(cashier.tray.cup.visible, false);
-assert.equal(cashier.tray.scoop.visible, false, 'cone must be empty before dispensing');
-system._setServiceTray(cashier, { flavor: 'vanilla', container: 'cone' }, true, true);
 assert.equal(cashier.tray.scoop.visible, true);
-assert.equal(cashier.tray.cone.rotation.x, Math.PI);
-assert.ok(cashier.tray.cone.position.y < cashier.tray.scoop.position.y);
-assert.equal(cashier.tray.scoopMaterial.color.getHex(), 0xffe7a0);
+assert.equal(cashier.tray.scoops.filter(({ visible }) => visible).length, 3);
 
 assert.deepEqual(production.calls.map(({ stage }) => stage), [
-  'need-container',
   'need-machine',
+  'need-pickup',
   'need-serve',
 ]);
 assert.ok(production.calls.every(({ index, role, flavor, container }) => (
