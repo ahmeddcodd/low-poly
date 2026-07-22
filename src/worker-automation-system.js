@@ -10,6 +10,7 @@ const NAV_GOAL_EPSILON = 0.06;
 const NAV_SEGMENT_STEP = 0.16;
 const NAV_MAX_SEARCH_NODES = 3500;
 const SERVICE_AISLE_BACK_LIMIT = -4.78;
+const NAV_PATH_SAFETY_MARGIN = 0.08;
 const LOOPING_ACTIONS = new Set(['Idle', 'Walk_Player', 'Carry_Idle', 'Carry_Walk']);
 const SERVICE_ROLES = new Set(['server']);
 const FLAVOR_COLORS = Object.freeze({
@@ -206,30 +207,31 @@ export class WorkerAutomationSystem {
     worker.navigationIndex = 0;
   }
 
-  _isNavigationBlocked(x, z, worker = null) {
+  _isNavigationBlocked(x, z, worker = null, safetyMargin = 0) {
     if (worker?.role === 'server' && z < SERVICE_AISLE_BACK_LIMIT) return true;
+    const clearance = WORKER_CLEARANCE + Math.max(0, Number(safetyMargin) || 0);
     const bounds = WORLD_CONFIG.playerBounds;
-    if (x < bounds.minX + WORKER_CLEARANCE
-      || x > bounds.maxX - WORKER_CLEARANCE
-      || z < bounds.minZ + WORKER_CLEARANCE
-      || z > bounds.maxZ - WORKER_CLEARANCE) {
+    if (x < bounds.minX + clearance
+      || x > bounds.maxX - clearance
+      || z < bounds.minZ + clearance
+      || z > bounds.maxZ - clearance) {
       return true;
     }
     return Boolean(this.characterSystem.isNavigationBlocked?.(
       x,
       z,
-      WORKER_CLEARANCE,
+      clearance,
     ));
   }
 
-  _segmentIsClear(startX, startZ, endX, endZ, worker = null) {
+  _segmentIsClear(startX, startZ, endX, endZ, worker = null, safetyMargin = 0) {
     const distance = Math.hypot(endX - startX, endZ - startZ);
     const steps = Math.max(1, Math.ceil(distance / NAV_SEGMENT_STEP));
     for (let index = 1; index <= steps; index += 1) {
       const ratio = index / steps;
       const x = THREE.MathUtils.lerp(startX, endX, ratio);
       const z = THREE.MathUtils.lerp(startZ, endZ, ratio);
-      if (this._isNavigationBlocked(x, z, worker)) return false;
+      if (this._isNavigationBlocked(x, z, worker, safetyMargin)) return false;
     }
     return true;
   }
@@ -240,7 +242,14 @@ export class WorkerAutomationSystem {
 
     const startX = worker.model.position.x;
     const startZ = worker.model.position.z;
-    if (this._segmentIsClear(startX, startZ, target[0], target[1], worker)) {
+    if (this._segmentIsClear(
+      startX,
+      startZ,
+      target[0],
+      target[1],
+      worker,
+      NAV_PATH_SAFETY_MARGIN,
+    )) {
       worker.navigationGoal = target;
       worker.navigationArrival = target;
       worker.navigationPath.push(target);
@@ -273,7 +282,12 @@ export class WorkerAutomationSystem {
       const key = cellKey(x, z);
       if (!blockedCache.has(key)) {
         const point = cellPoint(x, z);
-        blockedCache.set(key, this._isNavigationBlocked(point[0], point[1], worker));
+        blockedCache.set(key, this._isNavigationBlocked(
+          point[0],
+          point[1],
+          worker,
+          NAV_PATH_SAFETY_MARGIN,
+        ));
       }
       return blockedCache.get(key);
     };
@@ -375,8 +389,14 @@ export class WorkerAutomationSystem {
     reversePath.reverse();
 
     const goalPoint = cellPoint(goalCell.x, goalCell.z);
-    const exactTargetIsUsable = !this._isNavigationBlocked(target[0], target[1], worker)
-      && this._segmentIsClear(goalPoint[0], goalPoint[1], target[0], target[1], worker);
+    const exactTargetIsUsable = !this._isNavigationBlocked(
+      target[0],
+      target[1],
+      worker,
+      NAV_PATH_SAFETY_MARGIN,
+    ) && this._segmentIsClear(
+      goalPoint[0], goalPoint[1], target[0], target[1], worker, NAV_PATH_SAFETY_MARGIN,
+    );
     const candidates = reversePath;
     if (exactTargetIsUsable) candidates.push(target);
     const arrival = exactTargetIsUsable ? target : goalPoint;
@@ -388,7 +408,14 @@ export class WorkerAutomationSystem {
       let furthest = candidateIndex;
       for (let index = candidates.length - 1; index > candidateIndex; index -= 1) {
         const candidate = candidates[index];
-        if (this._segmentIsClear(anchorX, anchorZ, candidate[0], candidate[1], worker)) {
+        if (this._segmentIsClear(
+          anchorX,
+          anchorZ,
+          candidate[0],
+          candidate[1],
+          worker,
+          NAV_PATH_SAFETY_MARGIN,
+        )) {
           furthest = index;
           break;
         }
@@ -555,6 +582,18 @@ export class WorkerAutomationSystem {
       });
   }
 
+  _assignNextCleanerTask(worker) {
+    const dirtyTable = this.characterSystem.diningTables.find((table) => (
+      this.characterSystem.canCleanTable(table.id)
+    ));
+    if (!dirtyTable) return false;
+
+    worker.taskTableId = dirtyTable.id;
+    worker.state = 'to-table';
+    this._resetNavigation(worker);
+    return true;
+  }
+
   _updateCleaner(worker, delta, elapsed) {
     const cleanup = this.productionSystem.tableCleanup;
     if (!cleanup) return;
@@ -563,7 +602,9 @@ export class WorkerAutomationSystem {
       const table = this.characterSystem.getDiningTable(worker.taskTableId);
       if (table?.state !== 'clean') return;
       worker.taskTableId = null;
+      if (this._assignNextCleanerTask(worker)) return;
       worker.state = 'returning';
+      this._resetNavigation(worker);
     }
 
     if (worker.state === 'to-bin') {
@@ -580,7 +621,9 @@ export class WorkerAutomationSystem {
       const table = this.characterSystem.getDiningTable(worker.taskTableId);
       if (!table || !this.characterSystem.canCleanTable(table.id)) {
         worker.taskTableId = null;
+        if (this._assignNextCleanerTask(worker)) return;
         worker.state = 'returning';
+        this._resetNavigation(worker);
         return;
       }
       const arrived = this._moveWorker(worker, table.interactionPoint, delta, false);
@@ -597,18 +640,12 @@ export class WorkerAutomationSystem {
     }
 
     if (worker.state === 'returning') {
+      if (this._assignNextCleanerTask(worker)) return;
       if (!this._moveWorker(worker, worker.definition.post, delta, false)) return;
       worker.state = 'at-post';
     }
 
-    const dirtyTable = this.characterSystem.diningTables.find((table) => (
-      this.characterSystem.canCleanTable(table.id)
-    ));
-    if (dirtyTable) {
-      worker.taskTableId = dirtyTable.id;
-      worker.state = 'to-table';
-      return;
-    }
+    if (this._assignNextCleanerTask(worker)) return;
     this._holdPost(worker, delta);
   }
 

@@ -16,6 +16,12 @@ const obstacle = Object.freeze({
   minZ: -1,
   maxZ: 1,
 });
+const serviceBarrier = Object.freeze({
+  minX: -0.6,
+  maxX: 0.6,
+  minZ: -4.72,
+  maxZ: -3.9,
+});
 const routeWall = Object.freeze({
   minX: -0.25,
   maxX: 0.25,
@@ -23,6 +29,7 @@ const routeWall = Object.freeze({
   maxZ: 20,
 });
 let routeBlocked = false;
+let serviceBarrierEnabled = false;
 const EXPECTED_WORKER_CLEARANCE = 0.26;
 const pointInside = (collider, x, z, extraClearance) => (
   x >= collider.minX - extraClearance
@@ -32,6 +39,7 @@ const pointInside = (collider, x, z, extraClearance) => (
 );
 const isBlocked = (x, z, extraClearance = 0) => (
   pointInside(obstacle, x, z, extraClearance)
+  || (serviceBarrierEnabled && pointInside(serviceBarrier, x, z, extraClearance))
   || (routeBlocked && pointInside(routeWall, x, z, extraClearance))
 );
 const characterSystem = {
@@ -75,6 +83,31 @@ assert.equal(arrived, true);
 assert.ok(greatestDetour > obstacle.maxZ + EXPECTED_WORKER_CLEARANCE, 'worker clearance was not preserved');
 assert.ok(Math.hypot(worker.model.position.x - target[0], worker.model.position.z - target[1]) < 0.03);
 
+serviceBarrierEnabled = true;
+worker.model.position.set(-2, 0, -4.3);
+system._resetNavigation(worker);
+const barrierTarget = [2, -4.3];
+let barrierArrived = false;
+let minimumBarrierZ = worker.model.position.z;
+let maximumBarrierZ = worker.model.position.z;
+for (let frame = 0; frame < 1200 && !barrierArrived; frame += 1) {
+  barrierArrived = system._moveWorker(worker, barrierTarget, 1 / 60, true);
+  minimumBarrierZ = Math.min(minimumBarrierZ, worker.model.position.z);
+  maximumBarrierZ = Math.max(maximumBarrierZ, worker.model.position.z);
+  assert.equal(
+    isBlocked(worker.model.position.x, worker.model.position.z, EXPECTED_WORKER_CLEARANCE),
+    false,
+    'server entered the service barrier',
+  );
+}
+assert.equal(barrierArrived, true, 'worker repeated the same blocked corner path');
+assert.ok(minimumBarrierZ >= -4.78 - 1e-6, 'server routed behind the machine line');
+assert.ok(
+  maximumBarrierZ > serviceBarrier.maxZ + EXPECTED_WORKER_CLEARANCE,
+  'server did not preserve a safe path around the furniture corner',
+);
+serviceBarrierEnabled = false;
+
 assert.equal(system._isNavigationBlocked(3, -4.9, worker), true);
 worker.model.position.set(3.6, 0, -4.35);
 system._resetNavigation(worker);
@@ -101,32 +134,40 @@ const dirtyTable = {
   state: 'dirty',
   interactionPoint: [2, 0],
 };
+const secondDirtyTable = {
+  id: 'second-test-table',
+  state: 'dirty',
+  interactionPoint: [2, 2],
+};
+const diningTables = [dirtyTable, secondDirtyTable];
 const cleanupCalls = [];
-characterSystem.diningTables = [dirtyTable];
+characterSystem.diningTables = diningTables;
 characterSystem.getDiningTable = (tableId) => (
-  tableId === dirtyTable.id ? dirtyTable : null
+  diningTables.find(({ id }) => id === tableId) ?? null
 );
 characterSystem.canCleanTable = (tableId) => (
-  tableId === dirtyTable.id && dirtyTable.state === 'dirty'
+  characterSystem.getDiningTable(tableId)?.state === 'dirty'
 );
 productionSystem.tableCleanup = {
   binInteractionPoint: [-2, 0],
   beginWorkerCleanup(model, tableId) {
-    assert.equal(tableId, dirtyTable.id);
-    dirtyTable.state = 'garbage-carried';
-    routeBlocked = true;
-    cleanupCalls.push('picked-up');
+    const table = characterSystem.getDiningTable(tableId);
+    assert.equal(table?.state, 'dirty');
+    table.state = 'garbage-carried';
+    if (tableId === dirtyTable.id) routeBlocked = true;
+    cleanupCalls.push('picked-up:' + tableId);
     return true;
   },
   startWorkerDisposal(model, tableId) {
-    assert.equal(tableId, dirtyTable.id);
+    const table = characterSystem.getDiningTable(tableId);
+    assert.equal(table?.state, 'garbage-carried');
     assert.ok(
       Math.hypot(model.position.x + 2, model.position.z) < 0.08,
       'cleaner disposed trash before reaching the bin',
     );
     assert.equal(routeBlocked, false);
-    dirtyTable.state = 'clean';
-    cleanupCalls.push('disposed');
+    table.state = 'clean';
+    cleanupCalls.push('disposed:' + tableId);
     return true;
   },
 };
@@ -134,7 +175,7 @@ productionSystem.tableCleanup = {
 system.setWorkerCount(2);
 const cleaner = system.workers[1];
 let cleanerDetour = 0;
-for (let frame = 0; frame < 2400 && !cleanupCalls.includes('picked-up'); frame += 1) {
+for (let frame = 0; frame < 2400 && !cleanupCalls.includes('picked-up:' + dirtyTable.id); frame += 1) {
   system.update(1 / 60, frame / 60);
   cleanerDetour = Math.max(cleanerDetour, Math.abs(cleaner.model.position.z));
   assert.equal(
@@ -144,13 +185,13 @@ for (let frame = 0; frame < 2400 && !cleanupCalls.includes('picked-up'); frame +
   );
 }
 
-assert.deepEqual(cleanupCalls, ['picked-up']);
+assert.deepEqual(cleanupCalls, ['picked-up:' + dirtyTable.id]);
 assert.equal(cleaner.state, 'to-bin');
 const pickupPosition = cleaner.model.position.clone();
 assert.equal(system._isNavigationBlocked(3, -4.9, cleaner), false);
 system.update(1 / 60, 40);
 system.update(1 / 60, 40 + 1 / 60);
-assert.deepEqual(cleanupCalls, ['picked-up'], 'cleaner treated a failed route as bin arrival');
+assert.deepEqual(cleanupCalls, ['picked-up:' + dirtyTable.id], 'cleaner treated a failed route as bin arrival');
 assert.equal(cleaner.state, 'to-bin');
 assert.ok(cleaner.model.position.distanceTo(pickupPosition) < 0.001);
 
@@ -161,7 +202,7 @@ assert.equal(cleaner.state, 'to-bin');
 assert.ok(cleaner.model.position.distanceTo(pickupPosition) > 0.001, 'cleaner did not resume walking');
 assert.equal(cleaner.currentAnimation, 'Carry_Walk');
 
-for (let frame = 0; frame < 2400 && !cleanupCalls.includes('disposed'); frame += 1) {
+for (let frame = 0; frame < 2400 && !cleanupCalls.includes('disposed:' + dirtyTable.id); frame += 1) {
   system.update(1 / 60, 41 + frame / 60);
   cleanerDetour = Math.max(cleanerDetour, Math.abs(cleaner.model.position.z));
   assert.equal(
@@ -171,9 +212,35 @@ for (let frame = 0; frame < 2400 && !cleanupCalls.includes('disposed'); frame +=
   );
 }
 
-assert.deepEqual(cleanupCalls, ['picked-up', 'disposed']);
+assert.deepEqual(cleanupCalls, [
+  'picked-up:' + dirtyTable.id,
+  'disposed:' + dirtyTable.id,
+]);
 assert.equal(cleaner.role, 'cleaner');
 assert.equal(cleaner.state, 'disposing');
+
+system.update(1 / 60, 82);
+assert.equal(cleaner.state, 'to-table');
+assert.equal(cleaner.taskTableId, secondDirtyTable.id);
+
+for (let frame = 0; frame < 2400 && !cleanupCalls.includes('disposed:' + secondDirtyTable.id); frame += 1) {
+  system.update(1 / 60, 83 + frame / 60);
+  assert.equal(
+    isBlocked(cleaner.model.position.x, cleaner.model.position.z, EXPECTED_WORKER_CLEARANCE),
+    false,
+    'cleaner entered the furniture collider while processing the next table',
+  );
+}
+assert.deepEqual(cleanupCalls, [
+  'picked-up:' + dirtyTable.id,
+  'disposed:' + dirtyTable.id,
+  'picked-up:' + secondDirtyTable.id,
+  'disposed:' + secondDirtyTable.id,
+]);
+assert.ok(diningTables.every(({ state }) => state === 'clean'));
+system.update(1 / 60, 124);
+assert.equal(cleaner.state, 'returning');
+assert.equal(cleaner.taskTableId, null);
 assert.ok(cleanerDetour > obstacle.maxZ + EXPECTED_WORKER_CLEARANCE, 'cleaner clearance was not preserved');
 system.dispose();
 console.log('worker navigation tests passed');
