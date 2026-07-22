@@ -36,28 +36,44 @@ function createServiceTray() {
   const coneMaterial = new THREE.MeshStandardMaterial({ color: 0xe4a95e, roughness: 0.76 });
   const cupMaterial = new THREE.MeshStandardMaterial({ color: 0xf4f0e9, roughness: 0.7 });
   const scoopMaterial = new THREE.MeshStandardMaterial({ color: 0xffe7a0, roughness: 0.72 });
+  const coneGeometry = new THREE.ConeGeometry(0.13, 0.34, 8);
+  const cupGeometry = new THREE.CylinderGeometry(0.13, 0.105, 0.22, 10);
+  const scoopGeometry = new THREE.SphereGeometry(0.17, 10, 7);
   const tray = new THREE.Mesh(new RoundedBoxGeometry(0.72, 0.07, 0.48, 14, 0.028), trayMaterial);
-  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.34, 8), coneMaterial);
-  const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.105, 0.22, 10), cupMaterial);
-  const scoop = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 7), scoopMaterial);
   tray.position.y = 0.02;
-  cone.position.set(0, 0.22, 0);
-  cone.rotation.x = Math.PI;
-  cup.position.set(0, 0.15, 0);
-  cup.visible = false;
-  scoop.position.set(0, 0.43, 0);
-  [tray, cone, cup, scoop].forEach((mesh) => {
+  const cones = [];
+  const cups = [];
+  const scoops = [];
+  for (let index = 0; index < 3; index += 1) {
+    const cone = new THREE.Mesh(coneGeometry, coneMaterial);
+    const cup = new THREE.Mesh(cupGeometry, cupMaterial);
+    const scoop = new THREE.Mesh(scoopGeometry, scoopMaterial);
+    cone.position.set(0, 0.22 + index * 0.25, 0);
+    cone.rotation.x = Math.PI;
+    cup.position.set(0, 0.15 + index * 0.2, 0);
+    scoop.position.set(0, 0.43 + index * 0.25, 0);
+    cone.visible = false;
+    cup.visible = false;
+    scoop.visible = false;
+    cones.push(cone);
+    cups.push(cup);
+    scoops.push(scoop);
+  }
+  [tray, ...cones, ...cups, ...scoops].forEach((mesh) => {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
   });
-  group.add(tray, cone, cup, scoop);
+  group.add(tray, ...cones, ...cups, ...scoops);
   return {
     group,
-    cone,
-    cup,
-    scoop,
+    cone: cones[0],
+    cup: cups[0],
+    scoop: scoops[0],
+    cones,
+    cups,
+    scoops,
     scoopMaterial,
-    geometries: [tray.geometry, cone.geometry, cup.geometry, scoop.geometry],
+    geometries: [tray.geometry, coneGeometry, cupGeometry, scoopGeometry],
     materials: [trayMaterial, coneMaterial, cupMaterial, scoopMaterial],
   };
 }
@@ -187,17 +203,22 @@ export class WorkerAutomationSystem {
 
   _setServiceTray(worker, order, visible, completed = false) {
     worker.tray.group.visible = visible;
-    worker.tray.cone.visible = false;
-    worker.tray.cup.visible = false;
-    worker.tray.scoop.visible = false;
+    worker.tray.cones.forEach((product) => { product.visible = false; });
+    worker.tray.cups.forEach((product) => { product.visible = false; });
+    worker.tray.scoops.forEach((product) => { product.visible = false; });
     if (!visible || !order?.flavor) return;
 
     worker.tray.scoopMaterial.color.setHex(FLAVOR_COLORS[order.flavor] ?? FLAVOR_COLORS.vanilla);
     const isCup = order.container === 'cup';
-    worker.tray.cone.visible = !isCup;
-    worker.tray.cup.visible = isCup;
-    worker.tray.scoop.visible = completed;
-    worker.tray.scoop.position.y = isCup ? 0.31 : 0.43;
+    const amount = THREE.MathUtils.clamp(Math.floor(order.amount ?? 1), 1, 3);
+    for (let index = 0; index < amount; index += 1) {
+      worker.tray.cones[index].visible = !isCup;
+      worker.tray.cups[index].visible = isCup;
+      worker.tray.scoops[index].visible = completed;
+      worker.tray.scoops[index].position.y = isCup
+        ? 0.31 + index * 0.2
+        : 0.43 + index * 0.25;
+    }
   }
 
   _resetNavigation(worker) {

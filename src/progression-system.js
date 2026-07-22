@@ -271,16 +271,16 @@ const SIMPLE_STEP_OVERRIDES = Object.freeze({
     unlockId: 'vanilla-1',
     cost: 100,
     position: Object.freeze([0.8, 0.04, -3.45]),
-    label: 'VANILLA 1',
+    label: 'MACHINE 1',
     footer: 'START PRODUCTION',
-    title: 'Install the first vanilla machine',
-    detail: 'Invest $100 to start making vanilla ice cream',
+    title: 'Install the first ice cream machine',
+    detail: 'Invest $100 to begin stocking cup and cone orders',
   }),
   'first-sales': Object.freeze({
     id: 'first-sale',
     target: 1,
     title: 'Serve your first customer',
-    detail: 'Pick a cone or cup, fill it with vanilla, then serve it',
+    detail: 'Prepare the requested amount and stock it on the counter',
   }),
   'first-collection': Object.freeze({
     target: TUTORIAL_COLLECTION_TARGET,
@@ -303,10 +303,10 @@ const SIMPLE_STEP_OVERRIDES = Object.freeze({
     unlockId: 'vanilla-2',
     cost: 80,
     position: Object.freeze([-1.6, 0.04, -3.45]),
-    label: 'VANILLA 2',
+    label: 'MACHINE 2',
     footer: '2X CAPACITY',
-    title: 'Increase vanilla production',
-    detail: 'Invest $80 in a second vanilla machine for 2x production',
+    title: 'Increase ice cream production',
+    detail: 'Invest $80 in a second machine for 2x production',
   }),
   'mint-machine': Object.freeze({
     id: 'third-vanilla-machine',
@@ -314,15 +314,15 @@ const SIMPLE_STEP_OVERRIDES = Object.freeze({
     unlockId: 'vanilla-3',
     cost: 100,
     position: Object.freeze([-4, 0.04, -3.45]),
-    label: 'VANILLA 3',
+    label: 'MACHINE 3',
     footer: '3X CAPACITY',
-    title: 'Maximise vanilla production',
-    detail: 'Invest $100 in a third vanilla machine for 3x production',
+    title: 'Maximise ice cream production',
+    detail: 'Invest $100 in a third machine for 3x production',
   }),
   'grand-finale': Object.freeze({
     target: STORY_SERVICE_GOAL,
     title: `Serve ${STORY_SERVICE_GOAL} customers`,
-    detail: 'Run all three vanilla machines to finish the story',
+    detail: 'Run all three machines and both customer lines to finish the story',
   }),
 });
 
@@ -583,7 +583,7 @@ export class ShopProgressionSystem {
   get nextDetail() {
     return this.activeStep
       ? this.activeStep.detail
-      : 'Three vanilla machines, cone and cup machines, seating, staff, HR and GM are active';
+      : 'Three ice cream machines, cone and cup stations, seating, staff, HR and GM are active';
   }
 
   get progressPercent() {
@@ -724,7 +724,7 @@ export class ShopProgressionSystem {
     if (advanced && this.complete) {
       this.productionSystem.setStatus(
         'Ice cream shop story complete!',
-        'The full shop, three vanilla machines, expanded seating, HR, GM, and the two-worker team are active',
+        'The full shop, three machines, expanded seating, HR, GM, and the two-worker team are active',
       );
     }
   }

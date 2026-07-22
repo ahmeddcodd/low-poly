@@ -43,7 +43,7 @@ function makeProductionSystem(order, stage = 'need-container') {
   };
 }
 
-const vanillaCup = Object.freeze({ flavor: 'vanilla', container: 'cup', machineId: 'vanilla-2' });
+const vanillaCup = Object.freeze({ flavor: 'vanilla', container: 'cup', amount: 3, machineId: 'vanilla-2' });
 const production = makeProductionSystem(vanillaCup);
 const system = new WorkerAutomationSystem(makeSourceCharacter(), {}, production);
 system.setWorkerCount(99);
@@ -90,6 +90,8 @@ assert.ok(cashier.model.position.distanceTo(vanillaMachine.standPoint) < machine
 assert.equal(cashier.tray.group.visible, true);
 assert.equal(cashier.tray.cup.visible, true);
 assert.equal(cashier.tray.cone.visible, false);
+assert.equal(cashier.tray.cups.filter(({ visible }) => visible).length, 3);
+assert.equal(cashier.tray.cones.filter(({ visible }) => visible).length, 0);
 assert.equal(cashier.tray.scoop.visible, false, 'cup must stay empty before reaching the machine');
 
 cashier.model.position.copy(vanillaMachine.standPoint);
@@ -108,6 +110,7 @@ assert.equal(cashier.tray.group.visible, true);
 assert.equal(cashier.tray.cup.visible, true);
 assert.equal(cashier.tray.cone.visible, false);
 assert.equal(cashier.tray.scoop.visible, true, 'scoop appears only after dispensing');
+assert.equal(cashier.tray.scoops.filter(({ visible }) => visible).length, 3);
 assert.equal(cashier.tray.scoopMaterial.color.getHex(), 0xffe7a0);
 
 system._setServiceTray(cashier, { flavor: 'vanilla', container: 'cone' }, true);

@@ -39,16 +39,24 @@ const MACHINE_DEFINITIONS = Object.freeze([
 const PRODUCTS_URL = new URL('../ice_cream_glb/products_all.glb', import.meta.url).href;
 const SUPPORTS_URL = new URL('../ice_cream_glb/trays_support_all.glb', import.meta.url).href;
 const SERVE_POINT = Object.freeze([1.55, 0.08, -2.12]);
+const COUNTER_STOCK_POSITIONS = Object.freeze({
+  cone: Object.freeze([0.72, 1.13, -0.82]),
+  cup: Object.freeze([2.42, 1.13, -0.82]),
+});
 const CASH_POINT = Object.freeze([6.05, 0.08, -0.05]);
 const INTERACTION_RADIUS = 0.82;
 const CASH_PICKUP_RADIUS = 1;
 const MAX_CASH_BILLS = 24;
+export const MAX_ORDER_AMOUNT = 3;
+const MAX_VISIBLE_COUNTER_STOCK = 9;
 const STARTING_CASH = 500;
-const ORDER_FLAVOR_COLORS = Object.freeze({
-  vanilla: '#ffe7a0',
+const ORDER_CONTAINER_COLORS = Object.freeze({
+  cone: '#f3b45f',
+  cup: '#bfeadd',
 });
-const ORDER_FLAVOR_LABELS = Object.freeze({
-  vanilla: 'VANILLA',
+const ORDER_CONTAINER_LABELS = Object.freeze({
+  cone: 'CONE',
+  cup: 'CUP',
 });
 
 export const PRODUCTION_STATION_IDS = Object.freeze(['cone', 'cup']);
@@ -306,8 +314,7 @@ function createOrderBubble(order) {
   context.strokeStyle = 'rgba(255, 255, 246, 0.96)';
   context.stroke();
 
-  const flavorColor = ORDER_FLAVOR_COLORS[order.flavor];
-  context.fillStyle = flavorColor;
+  context.fillStyle = '#ffe7a0';
   context.beginPath();
   context.arc(77, 62, 35, 0, Math.PI * 2);
   context.fill();
@@ -342,10 +349,20 @@ function createOrderBubble(order) {
   context.textAlign = 'center';
   context.fillStyle = '#ffffff';
   context.font = '900 35px Arial, sans-serif';
-  context.fillText(ORDER_FLAVOR_LABELS[order.flavor], 241, 62);
+  context.fillText('', 241, 62);
   context.fillStyle = '#d8ffd2';
   context.font = '800 27px Arial, sans-serif';
   context.fillText(`${order.container.toUpperCase()}  •  1`, 241, 108);
+
+  context.fillStyle = 'rgba(40, 42, 37, 0.98)';
+  context.fillRect(126, 23, 218, 112);
+  context.textAlign = 'center';
+  context.fillStyle = ORDER_CONTAINER_COLORS[order.container] ?? '#ffffff';
+  context.font = '900 39px Arial, sans-serif';
+  context.fillText(ORDER_CONTAINER_LABELS[order.container] ?? order.container.toUpperCase(), 235, 63);
+  context.fillStyle = '#ffffff';
+  context.font = '900 39px Arial, sans-serif';
+  context.fillText(`x ${THREE.MathUtils.clamp(order.amount ?? 1, 1, MAX_ORDER_AMOUNT)}`, 235, 114);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -359,7 +376,7 @@ function createOrderBubble(order) {
     depthWrite: false,
   });
   const sprite = new THREE.Sprite(material);
-  sprite.name = `Order_Bubble_${order.flavor}_${order.container}`;
+  sprite.name = `Order_Bubble_${order.container}_${order.amount ?? 1}`;
   sprite.position.set(0, 2.75, 0);
   sprite.scale.set(2.55, 1.22, 1);
   sprite.renderOrder = 80;
@@ -438,6 +455,42 @@ function createCashPile() {
 }
 
 function disposeObjectResources(roots) {
+function createCounterStockDisplay(productsScene, container) {
+  const group = new THREE.Group();
+  group.name = `Counter_Stock_${container}`;
+  group.position.set(...COUNTER_STOCK_POSITIONS[container]);
+
+  const pad = new THREE.Mesh(
+    new THREE.BoxGeometry(0.92, 0.08, 0.68),
+    new THREE.MeshStandardMaterial({
+      color: container === 'cone' ? 0xf2c98d : 0xaee5dc,
+      roughness: 0.7,
+    }),
+  );
+  pad.name = `Counter_Stock_Pad_${container}`;
+  pad.position.y = -0.02;
+  pad.castShadow = true;
+  pad.receiveShadow = true;
+  group.add(pad);
+
+  const products = [];
+  for (let index = 0; index < MAX_VISIBLE_COUNTER_STOCK; index += 1) {
+    const product = cloneAsset(productsScene, PRODUCT_NAMES.vanilla[container]);
+    if (container === 'cone') orientConeProductUpright(product);
+    const column = index % 3;
+    const layer = Math.floor(index / 3);
+    product.name = `Counter_Stock_${container}_${index + 1}`;
+    product.position.set((column - 1) * 0.25, 0.16 + layer * 0.25, 0);
+    product.scale.setScalar(0.27);
+    product.visible = false;
+    configureObject(product);
+    group.add(product);
+    products.push(product);
+  }
+
+  return { group, products };
+}
+
   const geometries = new Set();
   const materials = new Set();
   const textures = new Set();
@@ -478,6 +531,9 @@ export class IceCreamProductionSystem {
     this.activeCarryProduct = null;
     this.stage = 'waiting';
     this.activeOrder = null;
+    this.counterStock = { cone: 0, cup: 0 };
+    this.counterStockDisplays = new Map();
+    this.nextProductionContainer = 'cone';
     this.dispenseReadyAt = 0;
     this.serveReadyAt = 0;
     this.nextOrderAt = 0;
@@ -522,6 +578,7 @@ export class IceCreamProductionSystem {
     );
     this.group.add(this.cashMarker);
     this._buildStations();
+    this._buildCounterStockDisplays();
     this._buildCarryRig();
     this.setSupportStationsVisible(false);
     this.setUnlockedMachines([]);
@@ -561,6 +618,15 @@ export class IceCreamProductionSystem {
     this.group.add(serveMarker);
   }
 
+  _buildCounterStockDisplays() {
+    Object.keys(ORDER_CONTAINER_LABELS).forEach((container) => {
+      const display = createCounterStockDisplay(this.productsScene, container);
+      this.counterStockDisplays.set(container, display);
+      this.group.add(display.group);
+    });
+    this._syncCounterStock();
+  }
+
   _buildCarryRig() {
     const tray = cloneAsset(this.supportsScene, 'Tray_1_Order');
     tray.name = 'Worker_Carry_Tray';
@@ -577,15 +643,19 @@ export class IceCreamProductionSystem {
     ]);
 
     carryNames.forEach((name) => {
-      const product = cloneAsset(this.productsScene, name);
-      if (name === PRODUCT_NAMES.cone || name.endsWith('_Cone')) orientConeProductUpright(product);
-      product.name = `Carry_${name}`;
-      product.position.set(0, 0.16, 0);
-      product.scale.setScalar(name.startsWith('Piece_') ? 0.76 : 0.58);
-      product.visible = false;
-      configureObject(product);
-      this.carryRig.add(product);
-      this.carryProducts.set(name, product);
+      const products = [];
+      for (let index = 0; index < MAX_ORDER_AMOUNT; index += 1) {
+        const product = cloneAsset(this.productsScene, name);
+        if (name === PRODUCT_NAMES.cone || name.endsWith('_Cone')) orientConeProductUpright(product);
+        product.name = `Carry_${name}_${index + 1}`;
+        product.position.set(0, 0.16 + index * 0.24, 0);
+        product.scale.setScalar(name.startsWith('Piece_') ? 0.76 : 0.58);
+        product.visible = false;
+        configureObject(product);
+        this.carryRig.add(product);
+        products.push(product);
+      }
+      this.carryProducts.set(name, products);
     });
   }
 
@@ -653,6 +723,9 @@ export class IceCreamProductionSystem {
 
   setSupportStationsVisible(visible) {
     this.supportStationsVisible = Boolean(visible);
+    this.counterStockDisplays.forEach(({ group }) => {
+      group.visible = this.supportStationsVisible;
+    });
     this.supports.forEach(({ definition, model }) => {
       model.visible = this.supportStationsVisible;
       this.colliders
@@ -674,18 +747,46 @@ export class IceCreamProductionSystem {
     return machine.model;
   }
 
-  _setCarryProduct(productName) {
-    this.carryProducts.forEach((product) => { product.visible = false; });
-    const product = this.carryProducts.get(productName);
-    if (!product) throw new Error(`Missing carry product: ${productName}`);
-    product.visible = true;
+  _syncCounterStock(container = null) {
+    const containers = container ? [container] : Object.keys(ORDER_CONTAINER_LABELS);
+    containers.forEach((stockContainer) => {
+      const display = this.counterStockDisplays.get(stockContainer);
+      if (!display) return;
+      const visibleCount = Math.min(
+        MAX_VISIBLE_COUNTER_STOCK,
+        Math.max(0, this.counterStock[stockContainer] ?? 0),
+      );
+      display.products.forEach((product, index) => {
+        product.visible = index < visibleCount;
+      });
+    });
+  }
+
+  _addCounterStock(container, amount) {
+    this.counterStock[container] = Math.max(0, (this.counterStock[container] ?? 0) + amount);
+    this._syncCounterStock(container);
+  }
+
+  _takeCounterStock(container, amount) {
+    if ((this.counterStock[container] ?? 0) < amount) return false;
+    this.counterStock[container] -= amount;
+    this._syncCounterStock(container);
+    return true;
+  }
+
+  _setCarryProduct(productName, amount = 1) {
+    this.carryProducts.forEach((products) => products.forEach((product) => { product.visible = false; }));
+    const products = this.carryProducts.get(productName);
+    if (!products) throw new Error(`Missing carry product: ${productName}`);
+    const visibleCount = THREE.MathUtils.clamp(Math.floor(amount), 1, MAX_ORDER_AMOUNT);
+    products.forEach((product, index) => { product.visible = index < visibleCount; });
     this.activeCarryProduct = productName;
     this.carryRig.visible = true;
   }
 
   _clearCarryProduct() {
     this.carryRig.visible = false;
-    this.carryProducts.forEach((product) => { product.visible = false; });
+    this.carryProducts.forEach((products) => products.forEach((product) => { product.visible = false; }));
     this.activeCarryProduct = null;
   }
 
@@ -698,6 +799,7 @@ export class IceCreamProductionSystem {
     }
     const bubble = createOrderBubble(order);
     customer.model.add(bubble);
+    bubble.userData.orderKey = `${order.container}:${order.amount ?? 1}`;
     this.orderBubbles.set(customer.definition.id, bubble);
   }
 
@@ -706,21 +808,46 @@ export class IceCreamProductionSystem {
     if (bubble) bubble.visible = false;
   }
 
+  _syncQueueOrderBubbles() {
+    this.characterSystem?.customers.forEach((customer) => {
+      const order = customer.order;
+      const bubble = this.orderBubbles.get(customer.definition.id);
+      if (customer.state !== 'ordering' || !order) {
+        if (bubble) bubble.visible = false;
+        return;
+      }
+      const orderKey = `${order.container}:${order.amount ?? 1}`;
+      if (!bubble || bubble.userData.orderKey !== orderKey) {
+        this._showOrderBubble(customer, order);
+        return;
+      }
+      bubble.visible = true;
+    });
+  }
+
   _showCustomerProduct(customer, order) {
     const productName = PRODUCT_NAMES[order.flavor][order.container];
-    const product = cloneAsset(this.productsScene, productName);
-    if (order.container === 'cone') orientConeProductUpright(product);
     const gripBone = customer.model.getObjectByName('RightHandProp');
     if (!gripBone) throw new Error(`Missing right-hand prop socket for ${customer.definition.id}`);
 
     const gripPivot = new THREE.Group();
+    const product = new THREE.Group();
     gripPivot.name = `Customer_Meal_Grip_${customer.definition.id}`;
-    product.name = `Customer_Meal_${customer.definition.id}`;
+    product.name = `Customer_Meal_Stack_${customer.definition.id}`;
+    const productCount = THREE.MathUtils.clamp(Math.floor(order.amount ?? 1), 1, MAX_ORDER_AMOUNT);
+    for (let index = 0; index < productCount; index += 1) {
+      const item = cloneAsset(this.productsScene, productName);
+      if (order.container === 'cone') orientConeProductUpright(item);
+      item.name = `Customer_Meal_${customer.definition.id}_${index + 1}`;
+      item.position.set(0, index * 0.18, 0);
+      item.quaternion.identity();
+      item.scale.setScalar(CUSTOMER_PRODUCT_SCALE);
+      item.userData.customerGripAttached = true;
+      configureObject(item);
+      product.add(item);
+    }
     product.position.set(0, CUSTOMER_PRODUCT_GRIP_OFFSET[order.container], 0);
-    product.quaternion.identity();
-    product.scale.setScalar(CUSTOMER_PRODUCT_SCALE);
     product.userData.customerGripAttached = true;
-    configureObject(product);
     const previous = this.customerProducts.get(customer.definition.id);
     if (previous) previous.gripPivot.removeFromParent();
     gripBone.add(gripPivot);
@@ -828,24 +955,61 @@ export class IceCreamProductionSystem {
     return false;
   }
 
-  _completeService(service, elapsed) {
-    const order = this.activeOrder;
+  _completeCustomerService(service, order, elapsed) {
     const basePayment = order.container === 'cup' ? 20 : 15;
     const profitMultiplier = this.hiringSystem?.profitMultiplier ?? 1;
-    const payment = basePayment * profitMultiplier;
+    const payment = basePayment * (order.amount ?? 1) * profitMultiplier;
     this._hideOrderBubble(service.customer);
     this._showCustomerProduct(service.customer, order);
-    this._clearCarryProduct();
-    this.characterSystem.setPlayerCarrying(false);
     this._addPendingCash(payment);
     this.servedCount += 1;
+    this.nextOrderAt = Math.max(this.nextOrderAt, elapsed + 0.18);
+    if (this.stage === 'waiting') {
+      this._setStatus(
+        `${(order.container ?? '').toUpperCase()} order collected`,
+        `$${payment} was added to the cash stack on the left of the counter`,
+      );
+    }
+  }
+
+  _tryFulfillWaitingCustomers(elapsed) {
+    let fulfilled = false;
+    for (const container of Object.keys(ORDER_CONTAINER_LABELS)) {
+      const customer = this.characterSystem.getFrontCustomer(container);
+      const demand = customer?.order;
+      if (!customer || !demand) continue;
+      const amount = THREE.MathUtils.clamp(
+        Math.floor(demand.amount ?? 1),
+        1,
+        MAX_ORDER_AMOUNT,
+      );
+      if ((this.counterStock[container] ?? 0) < amount) continue;
+      const order = Object.freeze({ ...demand, flavor: 'vanilla', amount });
+      const service = this.characterSystem.serveFrontCustomer(elapsed, order);
+      if (!service.ok) continue;
+      this._takeCounterStock(container, amount);
+      this._completeCustomerService(service, order, elapsed);
+      fulfilled = true;
+    }
+    return fulfilled;
+  }
+
+  _depositActiveBatch(elapsed) {
+    const order = this.activeOrder;
+    if (!order) return false;
+    const amount = THREE.MathUtils.clamp(Math.floor(order.amount ?? 1), 1, MAX_ORDER_AMOUNT);
+    this._addCounterStock(order.container, amount);
+    this._clearCarryProduct();
+    this.characterSystem.setPlayerCarrying(false);
     this.activeOrder = null;
     this.stage = 'waiting';
-    this.nextOrderAt = elapsed + 0.55;
+    this.nextOrderAt = elapsed + 0.12;
+    const label = ORDER_CONTAINER_LABELS[order.container] ?? order.container.toUpperCase();
     this._setStatus(
-      'Payment stacked on the left of the counter',
-      `Walk to the cash pile to collect $${this.pendingCash}`,
+      `${amount} x ${label} stocked on the counter`,
+      `The front ${order.container} customer can collect the requested amount`,
     );
+    return true;
   }
 
   spendCash(amount) {
@@ -866,9 +1030,14 @@ export class IceCreamProductionSystem {
   }
 
   _setStatus(title, detail) {
-    const resolvedDetail = this.tutorialGuidanceActive ? detail : detail.replaceAll('glowing ', '');
-    if (this.status.title === title && this.status.detail === resolvedDetail) return;
-    this.status = Object.freeze({ title, detail: resolvedDetail });
+    const sanitize = (value) => value
+      .replaceAll(/vanilla\s*/gi, '')
+      .replaceAll(/\s{2,}/g, ' ')
+      .trim();
+    const resolvedTitle = sanitize(title);
+    const resolvedDetail = sanitize(this.tutorialGuidanceActive ? detail : detail.replaceAll('glowing ', ''));
+    if (this.status.title === resolvedTitle && this.status.detail === resolvedDetail) return;
+    this.status = Object.freeze({ title: resolvedTitle, detail: resolvedDetail });
     this.statusRevision += 1;
   }
 
@@ -882,19 +1051,40 @@ export class IceCreamProductionSystem {
   _startOrder() {
     const unlockedMachines = this.machines.filter(({ id }) => this.unlockedMachines.has(id));
     if (unlockedMachines.length === 0) return false;
-    const machine = unlockedMachines[this.servedCount % unlockedMachines.length];
-    const flavor = 'vanilla';
-    const container = this.servedCount % 2 === 0 ? 'cone' : 'cup';
-    const order = Object.freeze({ flavor, container, machineId: machine.id });
-    const customer = this.characterSystem.assignFrontCustomerOrder(order);
-    if (!customer) return false;
+
+    const frontCustomers = this.characterSystem.getFrontCustomers();
+    const lanePriority = this.nextProductionContainer === 'cone'
+      ? ['cone', 'cup']
+      : ['cup', 'cone'];
+    let selected = null;
+    for (const container of lanePriority) {
+      const customer = frontCustomers.find((candidate) => candidate.queueContainer === container);
+      const requestedAmount = customer?.order?.amount ?? 0;
+      const shortage = Math.max(0, requestedAmount - (this.counterStock[container] ?? 0));
+      if (!customer || shortage <= 0) continue;
+      selected = { customer, container, requestedAmount, shortage };
+      break;
+    }
+    if (!selected) return false;
+
+    const machineIndex = (this.servedCount + selected.requestedAmount) % unlockedMachines.length;
+    const machine = unlockedMachines[machineIndex];
+    const order = Object.freeze({
+      flavor: 'vanilla',
+      container: selected.container,
+      amount: selected.shortage,
+      requestedAmount: selected.requestedAmount,
+      machineId: machine.id,
+      customerId: selected.customer.definition.id,
+    });
     this.activeOrder = order;
-    this._showOrderBubble(customer, order);
+    this.nextProductionContainer = selected.container === 'cone' ? 'cup' : 'cone';
     this.stage = 'need-container';
-    this._setTargetMarker(`station-${container}`);
+    this._setTargetMarker(`station-${selected.container}`);
+    const itemLabel = order.amount === 1 ? selected.container : `${selected.container}s`;
     this._setStatus(
-      `Pick up a ${container}`,
-      `Walk to the ${container} dispenser for the ${flavor} order`,
+      `Pick up ${order.amount} ${itemLabel}`,
+      `Prepare stock for the ${selected.container} customer line`,
     );
     return true;
   }
@@ -933,8 +1123,8 @@ export class IceCreamProductionSystem {
       this.dispenseReadyAt = elapsed + 0.74 / dispenseSpeed;
       this._setTargetMarker(null);
       this._setStatus(
-        `${worker.label} worker is dispensing ${order.flavor}`,
-        'The machine is filling the employee service tray',
+        `${worker.label} worker is filling ${order.amount} ${order.container}${order.amount === 1 ? '' : 's'}`,
+        'The machine is preparing a counter stock batch',
       );
       return true;
     }
@@ -945,8 +1135,8 @@ export class IceCreamProductionSystem {
       this.serveReadyAt = elapsed + 0.62 / productionSpeed;
       this._setTargetMarker(null);
       this._setStatus(
-        `${worker.label} worker served the order!`,
-        'The customer will pay and walk to a clean dining seat',
+        `${worker.label} worker is stocking the counter`,
+        `They are placing ${order.amount} completed ${order.container}${order.amount === 1 ? '' : 's'} on the tray`,
       );
       return true;
     }
@@ -982,6 +1172,7 @@ export class IceCreamProductionSystem {
         machine.preview.visible = false;
       }
     });
+    this._syncQueueOrderBubbles();
     this._syncCustomerDiningVisuals();
     this._updateMarkers(elapsed);
 
@@ -990,6 +1181,7 @@ export class IceCreamProductionSystem {
     const playerPosition = player.model.position;
     this._tryCollectCash(playerPosition);
     if (this._handleTableCleanup(elapsed, playerPosition)) return;
+    this._tryFulfillWaitingCustomers(elapsed);
 
     if (this.stage === 'waiting' && this.progressionSystem?.blocksOrders) {
       this._setTargetMarker(null);
@@ -1031,28 +1223,30 @@ export class IceCreamProductionSystem {
       }
 
       if (elapsed < this.nextOrderAt) return;
-      const frontCustomer = this.characterSystem.customers.find((customer) => customer.state === 'ordering');
-      if (frontCustomer) {
-        this._startOrder();
+      const frontCustomers = this.characterSystem.getFrontCustomers();
+      if (frontCustomers.length > 0) {
+        if (!this._startOrder()) {
+          this._setTargetMarker(null);
+          const enoughStock = frontCustomers.some(({ order }) => (
+            (this.counterStock[order.container] ?? 0) >= (order.amount ?? 1)
+          ));
+          this._setStatus(
+            enoughStock ? 'A clean table is needed' : 'Cup and cone lines are waiting',
+            enoughStock
+              ? 'Customers will collect from the counter as soon as a dining seat is available'
+              : 'Keep matching cup and cone stacks ready on the counter',
+          );
+        }
       } else {
         this._setTargetMarker(null);
-        this._setStatus('Customer approaching', 'The next guest is walking to the order counter');
+        this._setStatus('Customers approaching', 'Cup and cone guests are walking to their separate lines');
       }
       return;
     }
 
     if (this.stage === 'waiting-for-table') {
-      if (this.characterSystem.availableSeatCount <= 0) {
-        this._setStatus(
-          this.characterSystem.cleanableTableCount > 0 ? 'Clean a table for this customer' : 'Waiting for diners to finish',
-          this.characterSystem.cleanableTableCount > 0
-            ? 'Pick up the table garbage and throw it in the green trash bin'
-            : 'The completed order is safe at the counter until a table becomes cleanable',
-        );
-        return;
-      }
-      const service = this.characterSystem.serveFrontCustomer(elapsed, this.activeOrder);
-      if (service.ok) this._completeService(service, elapsed);
+      this.stage = 'waiting';
+      this.activeOrder = null;
       return;
     }
 
@@ -1067,8 +1261,8 @@ export class IceCreamProductionSystem {
         this.characterSystem.setPlayerCarrying(false);
       }
       this._setStatus(
-        `${assignedWorker?.label ?? 'Ice cream'} worker is preparing the order`,
-        `They are making the requested ${this.activeOrder.flavor} ${this.activeOrder.container}`,
+        `${assignedWorker?.label ?? 'Ice cream'} worker is preparing counter stock`,
+        `They are making ${this.activeOrder.amount} ${this.activeOrder.container}${this.activeOrder.amount === 1 ? '' : 's'}`,
       );
       return;
     }
@@ -1076,14 +1270,14 @@ export class IceCreamProductionSystem {
     if (this.stage === 'need-container') {
       const stationPoint = this.stationPoints.get(this.activeOrder.container);
       if (!stationPoint || !this._near(playerPosition, stationPoint)) return;
-      this._setCarryProduct(PRODUCT_NAMES[this.activeOrder.container]);
+      this._setCarryProduct(PRODUCT_NAMES[this.activeOrder.container], this.activeOrder.amount);
       this.characterSystem.setPlayerCarrying(true);
       this.characterSystem.playPlayerAction('Pickup');
       this.stage = 'need-machine';
       this._setTargetMarker(`machine-${this.activeOrder.machineId}`);
       this._setStatus(
-        `Make ${this.activeOrder.flavor} ice cream`,
-        `Take the ${this.activeOrder.container} to the selected vanilla machine`,
+        `Fill ${this.activeOrder.amount} ${this.activeOrder.container}${this.activeOrder.amount === 1 ? '' : 's'}`,
+        'Take the empty stack to the ice cream machine',
       );
       return;
     }
@@ -1107,13 +1301,13 @@ export class IceCreamProductionSystem {
         this._clearCarryProduct();
         this.characterSystem.setPlayerCarrying(false);
       } else {
-        this._setCarryProduct(productName);
+        this._setCarryProduct(productName, this.activeOrder.amount);
       }
       this.stage = 'need-serve';
       this._setTargetMarker('serve');
       this._setStatus(
-        `Serve the ${this.activeOrder.flavor} ${this.activeOrder.container}`,
-        'Take the completed ice cream to the staff point behind the counter',
+        `Stock ${this.activeOrder.amount} ${this.activeOrder.container}${this.activeOrder.amount === 1 ? '' : 's'}`,
+        'Take the completed stack to the matching counter tray',
       );
       return;
     }
@@ -1127,27 +1321,13 @@ export class IceCreamProductionSystem {
       const productionSpeed = this.hiringSystem?.productionSpeedMultiplier ?? 1;
       this.serveReadyAt = elapsed + 0.62 / productionSpeed;
       this._setTargetMarker(null);
-      this._setStatus('Order served!', 'The customer is happy and the queue is moving forward');
+      this._setStatus('Stocking the counter', 'The matching customer line is ready to collect');
       return;
     }
 
     if (this.stage === 'serving' && elapsed >= this.serveReadyAt) {
-      const service = this.characterSystem.serveFrontCustomer(elapsed, this.activeOrder);
-      if (!service.ok) {
-        if (service.reason === 'no-seat') {
-          this._clearCarryProduct();
-          this.characterSystem.setPlayerCarrying(false);
-          this.stage = 'waiting-for-table';
-          this._setStatus(
-            this.characterSystem.cleanableTableCount > 0 ? 'Clean a table to free seats' : 'Waiting for a free table',
-            this.characterSystem.cleanableTableCount > 0
-              ? 'Pick up the table garbage and throw it in the trash bin'
-              : 'The completed order is waiting safely at the counter',
-          );
-        }
-        return;
-      }
-      this._completeService(service, elapsed);
+      this._depositActiveBatch(elapsed);
+      this._tryFulfillWaitingCustomers(elapsed);
     }
   }
 

@@ -59,6 +59,11 @@ const CUSTOMER_ENTRY_POSITION = Object.freeze([-2.5, 8.15]);
 const CUSTOMER_ENTRY_INSIDE = Object.freeze([-2.5, 6.72]);
 const PLAYER_START_POSITION = Object.freeze([-2.5, 8.15]);
 const ORDER_COUNTER_POINT = Object.freeze([1.55, -0.82]);
+const ORDER_COUNTER_POINTS = Object.freeze({
+  cone: Object.freeze([0.62, -0.82]),
+  cup: Object.freeze([2.48, -0.82]),
+});
+export const CUSTOMER_QUEUE_CONTAINERS = Object.freeze(['cone', 'cup']);
 const DINING_TABLE_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: 'compact-table',
@@ -120,16 +125,44 @@ const DINING_SEAT_DEFINITIONS = Object.freeze([
     route: Object.freeze([Object.freeze([-2.2, 5.95]), Object.freeze([-5.51, 5.95])]),
   }),
 ]);
-const CUSTOMER_QUEUE_SLOTS = Object.freeze([
-  Object.freeze([1.55, 0.55]),
-  Object.freeze([2.55, 1.45]),
-  Object.freeze([3.55, 2.35]),
-  Object.freeze([4.55, 3.3]),
-  Object.freeze([4.75, 4.55]),
-  Object.freeze([3.75, 5.35]),
-  Object.freeze([2.55, 5.85]),
-  Object.freeze([1.15, 6.1]),
-]);
+export const CUSTOMER_QUEUE_LANES = Object.freeze({
+  cone: Object.freeze([
+    Object.freeze([0.62, 0.55]),
+    Object.freeze([0.62, 1.68]),
+    Object.freeze([0.62, 2.81]),
+    Object.freeze([0.62, 3.94]),
+  ]),
+  cup: Object.freeze([
+    Object.freeze([2.48, 0.55]),
+    Object.freeze([2.48, 1.68]),
+    Object.freeze([2.48, 2.81]),
+    Object.freeze([2.48, 3.94]),
+  ]),
+});
+const CUSTOMER_QUEUE_ENTRIES = Object.freeze({
+  cone: Object.freeze([0.62, 5.2]),
+  cup: Object.freeze([2.48, 5.2]),
+});
+
+function queueContainerFor(customerIndex, visitNumber = 0) {
+  return CUSTOMER_QUEUE_CONTAINERS[(customerIndex + visitNumber) % CUSTOMER_QUEUE_CONTAINERS.length];
+}
+
+function createCustomerOrder(container, customerIndex, visitNumber = 0) {
+  return Object.freeze({
+    container,
+    amount: 1 + ((customerIndex + visitNumber) % 3),
+  });
+}
+
+function buildQueueRoute(container, queueIndex) {
+  const slots = CUSTOMER_QUEUE_LANES[container];
+  return [
+    CUSTOMER_ENTRY_INSIDE,
+    CUSTOMER_QUEUE_ENTRIES[container],
+    ...slots.slice(queueIndex).reverse(),
+  ];
+}
 
 function dampAngle(current, target, delta, speed = 14) {
   const difference = Math.atan2(Math.sin(target - current), Math.cos(target - current));
@@ -414,19 +447,21 @@ export class CharacterSystem {
       character.state = 'idle';
       this.player = character;
     } else {
-      const queueIndex = this.customers.length;
+      const customerIndex = this.customers.length;
+      const queueContainer = queueContainerFor(customerIndex);
+      const queueIndex = this.customers.filter((customer) => (
+        customer.queueContainer === queueContainer
+      )).length;
+      character.queueContainer = queueContainer;
       character.queueIndex = queueIndex;
       character.state = 'waiting-to-enter';
-      character.spawnAt = CUSTOMER_SPAWN_DELAY + queueIndex * CUSTOMER_SPAWN_INTERVAL;
-      character.order = null;
+      character.spawnAt = CUSTOMER_SPAWN_DELAY + customerIndex * CUSTOMER_SPAWN_INTERVAL;
+      character.order = createCustomerOrder(queueContainer, customerIndex);
       character.seatId = null;
       character.departedAt = Infinity;
       character.visitNumber = 0;
       character.mealUntil = 0;
-      character.route = [
-        CUSTOMER_ENTRY_INSIDE,
-        ...CUSTOMER_QUEUE_SLOTS.slice(queueIndex).reverse(),
-      ];
+      character.route = buildQueueRoute(queueContainer, queueIndex);
       character.routeIndex = 0;
       model.position.x = CUSTOMER_ENTRY_POSITION[0];
       model.position.z = CUSTOMER_ENTRY_POSITION[1];
@@ -528,19 +563,21 @@ export class CharacterSystem {
     this.customerFlowEnabled = nextEnabled;
     if (!nextEnabled) return;
 
-    this.customers.forEach((customer, queueIndex) => {
+    const laneCounts = { cone: 0, cup: 0 };
+    this.customers.forEach((customer, customerIndex) => {
+      const queueContainer = queueContainerFor(customerIndex, 1);
+      const queueIndex = laneCounts[queueContainer];
+      laneCounts[queueContainer] += 1;
+      customer.queueContainer = queueContainer;
       customer.queueIndex = queueIndex;
       customer.state = 'waiting-to-enter';
-      customer.spawnAt = elapsed + CUSTOMER_SPAWN_DELAY + queueIndex * CUSTOMER_SPAWN_INTERVAL;
-      customer.order = null;
+      customer.spawnAt = elapsed + CUSTOMER_SPAWN_DELAY + customerIndex * CUSTOMER_SPAWN_INTERVAL;
+      customer.order = createCustomerOrder(queueContainer, customerIndex, 1);
       customer.seatId = null;
       customer.departedAt = Infinity;
       customer.visitNumber = 1;
       customer.mealUntil = 0;
-      customer.route = [
-        CUSTOMER_ENTRY_INSIDE,
-        ...CUSTOMER_QUEUE_SLOTS.slice(queueIndex).reverse(),
-      ];
+      customer.route = buildQueueRoute(queueContainer, queueIndex);
       customer.routeIndex = 0;
       customer.model.position.x = CUSTOMER_ENTRY_POSITION[0];
       customer.model.position.z = CUSTOMER_ENTRY_POSITION[1];
@@ -664,15 +701,24 @@ export class CharacterSystem {
     )).length;
   }
 
-  getFrontCustomer() {
+  getFrontCustomer(container = null) {
     return this.customers.find((customer) => (
       customer.queueIndex === 0 && customer.state === 'ordering'
+      && (!container || customer.queueContainer === container)
     )) ?? null;
   }
 
+  getFrontCustomers() {
+    return CUSTOMER_QUEUE_CONTAINERS
+      .map((container) => this.getFrontCustomer(container))
+      .filter(Boolean);
+  }
+
   assignFrontCustomerOrder(order) {
-    const customer = this.getFrontCustomer();
-    if (customer) customer.order = order;
+    const customer = this.getFrontCustomer(order?.container);
+    if (customer) {
+      customer.order = Object.freeze({ ...customer.order, ...order });
+    }
     return customer;
   }
 
@@ -730,33 +776,39 @@ export class CharacterSystem {
 
   _recycleDepartedCustomers(elapsed) {
     if (!this.customerReturnsEnabled) return;
-    let nextQueueIndex = this.customers.filter(({ state }) => (
-      state === 'waiting-to-enter'
-      || state === 'walking'
-      || state === 'queued'
-      || state === 'ordering'
-    )).length;
-    if (nextQueueIndex >= CUSTOMER_QUEUE_SLOTS.length) return;
+    const laneCounts = { cone: 0, cup: 0 };
+    this.customers.forEach((customer) => {
+      if (!['waiting-to-enter', 'walking', 'queued', 'ordering'].includes(customer.state)) return;
+      laneCounts[customer.queueContainer] += 1;
+    });
 
     this.customers.forEach((customer) => {
       if (customer.state !== 'departed' || elapsed - customer.departedAt < 2.2) return;
-      if (nextQueueIndex >= CUSTOMER_QUEUE_SLOTS.length) return;
-      customer.queueIndex = nextQueueIndex;
+      const nextVisitNumber = customer.visitNumber + 1;
+      const preferredContainer = queueContainerFor(customer.index, nextVisitNumber);
+      const alternateContainer = preferredContainer === 'cone' ? 'cup' : 'cone';
+      const queueContainer = laneCounts[preferredContainer] < CUSTOMER_QUEUE_LANES[preferredContainer].length
+        ? preferredContainer
+        : laneCounts[alternateContainer] < CUSTOMER_QUEUE_LANES[alternateContainer].length
+          ? alternateContainer
+          : null;
+      if (!queueContainer) return;
+
+      const queueIndex = laneCounts[queueContainer];
+      laneCounts[queueContainer] += 1;
+      customer.queueContainer = queueContainer;
+      customer.queueIndex = queueIndex;
       customer.state = 'waiting-to-enter';
-      customer.spawnAt = elapsed + 0.25 + nextQueueIndex * 0.08;
-      customer.order = null;
+      customer.spawnAt = elapsed + 0.25 + queueIndex * 0.08;
       customer.seatId = null;
       customer.mealUntil = 0;
-      customer.visitNumber += 1;
+      customer.visitNumber = nextVisitNumber;
+      customer.order = createCustomerOrder(queueContainer, customer.index, nextVisitNumber);
       this.customerVisitCount += 1;
-      customer.route = [
-        CUSTOMER_ENTRY_INSIDE,
-        ...CUSTOMER_QUEUE_SLOTS.slice(nextQueueIndex).reverse(),
-      ];
+      customer.route = buildQueueRoute(queueContainer, queueIndex);
       customer.routeIndex = 0;
       customer.model.position.x = CUSTOMER_ENTRY_POSITION[0];
       customer.model.position.z = CUSTOMER_ENTRY_POSITION[1];
-      nextQueueIndex += 1;
     });
   }
 
@@ -856,9 +908,10 @@ export class CharacterSystem {
       }
 
       if (customer.state === 'queued' || customer.state === 'ordering') {
+        const laneSlots = CUSTOMER_QUEUE_LANES[customer.queueContainer];
         const facingPoint = customer.queueIndex === 0
-          ? ORDER_COUNTER_POINT
-          : CUSTOMER_QUEUE_SLOTS[customer.queueIndex - 1];
+          ? ORDER_COUNTER_POINTS[customer.queueContainer]
+          : laneSlots[customer.queueIndex - 1];
         model.rotation.y = dampAngle(
           model.rotation.y,
           targetRotation(facingPoint[0] - model.position.x, facingPoint[1] - model.position.z),
@@ -870,7 +923,7 @@ export class CharacterSystem {
   }
 
   serveFrontCustomer(elapsed, order) {
-    const servedCustomer = this.getFrontCustomer();
+    const servedCustomer = this.getFrontCustomer(order?.container);
     if (!servedCustomer) return Object.freeze({ ok: false, reason: 'no-customer' });
 
     const seat = this.diningSeats.find((candidate) => {
@@ -888,18 +941,20 @@ export class CharacterSystem {
     this.setAnimation(servedCustomer.definition.id, 'Receive_Order', 0.1);
 
     this.customers.forEach((customer) => {
-      if (customer === servedCustomer || customer.state === 'departed' || customer.queueIndex <= 0) return;
+      if (customer === servedCustomer
+        || customer.state === 'departed'
+        || customer.queueContainer !== servedCustomer.queueContainer
+        || customer.queueIndex <= 0) {
+        return;
+      }
       customer.queueIndex -= 1;
       if (customer.state === 'waiting-to-enter') {
-        customer.route = [
-          CUSTOMER_ENTRY_INSIDE,
-          ...CUSTOMER_QUEUE_SLOTS.slice(customer.queueIndex).reverse(),
-        ];
+        customer.route = buildQueueRoute(customer.queueContainer, customer.queueIndex);
         customer.routeIndex = 0;
         return;
       }
 
-      customer.route = [CUSTOMER_QUEUE_SLOTS[customer.queueIndex]];
+      customer.route = [CUSTOMER_QUEUE_LANES[customer.queueContainer][customer.queueIndex]];
       customer.routeIndex = 0;
       customer.state = 'walking';
       this.setAnimation(customer.definition.id, 'Walk_Customer');

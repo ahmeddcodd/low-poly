@@ -77,17 +77,31 @@ routedProduction.machines = [
 ];
 routedProduction.servedCount = 1;
 routedProduction.tutorialGuidanceActive = false;
+routedProduction.counterStock = { cone: 0, cup: 0 };
+routedProduction.nextProductionContainer = 'cup';
 routedProduction.markers = new Map();
 routedProduction.status = Object.freeze({ title: '', detail: '' });
 routedProduction.statusRevision = 0;
 routedProduction._showOrderBubble = () => {};
-let routedOrder = null;
+const cupCustomer = {
+  definition: { id: 'test-customer' },
+  model: new THREE.Group(),
+  queueContainer: 'cup',
+  order: Object.freeze({ container: 'cup', amount: 2 }),
+};
 routedProduction.characterSystem = {
-  assignFrontCustomerOrder(order) {
-    routedOrder = order;
-    return { definition: { id: 'test-customer' }, model: new THREE.Group() };
+  getFrontCustomers() {
+    return [cupCustomer];
   },
 };
 assert.equal(routedProduction._startOrder(), true);
-assert.deepEqual(routedOrder, { flavor: 'vanilla', container: 'cup', machineId: 'vanilla-2' });
+assert.deepEqual(routedProduction.activeOrder, {
+  flavor: 'vanilla',
+  container: 'cup',
+  amount: 2,
+  requestedAmount: 2,
+  machineId: 'vanilla-2',
+  customerId: 'test-customer',
+});
+assert.equal(routedProduction.nextProductionContainer, 'cone');
 console.log('tutorial guidance tests passed');
